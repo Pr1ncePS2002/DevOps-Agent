@@ -6,28 +6,28 @@ Date: 2025-11-27
 AI DevOps Commander is an intelligent, autonomous DevOps agent that converts natural-language commands into safe, auditable deployment workflows. It runs locally first, with a path to scale to cloud environments.
 
 - Frontend: Next.js + TailwindCSS + ShadCN UI
-- Backend: NestJS (TypeScript)
-- Agents: LangGraph (preferred)
-- LLM: Ollama (local inference)
+- Backend: FastAPI (Python)
+- Agents: LangGraph (Python)
+- LLM: Provider-based (Ollama / OpenAI / Gemini)
 - Vector DB: Chroma (MVP), PGVector (later)
 - Database: SQLite (MVP) → Postgres (scale)
-- Queue: Redis + BullMQ
+- Queue: Redis + RQ
 - Monitoring: Prometheus + Grafana
 - Container: Docker Desktop / Rancher Desktop
 
 ## High-Level Components
 - Next.js UI: Command input, plan preview, dashboards (logs, metrics, history)
-- API Gateway (NestJS): REST endpoints for parse/plan/execute/status/RAG
+- API Gateway (FastAPI): REST endpoints for parse/plan/execute/status/RAG
 - Agents Layer (LangGraph):
   - CommandInterpreterAgent: parse NL → structured plan
   - RAGAdvisorAgent: validate plan against SOPs via vector search
   - ExecutionGraph: orchestrates build/test/deploy/monitor
   - WatchdogAgent: monitors error-rate/logs; triggers rollback
 - Adapters (MCP-style, sandboxed): Git, Docker, Shell (whitelist), Monitoring (Prometheus), VectorStore (Chroma)
-- Queue: BullMQ + Redis for long-running jobs and watchdog schedule
+- Queue: RQ + Redis for long-running jobs and watchdog schedule
 - Persistence: SQLite (plans, executions, history, embeddings metadata)
 - Monitoring: Prometheus client in API; Grafana dashboards
-- LLM: Ollama HTTP APIs for chat and embeddings
+- LLM: Provider clients (Ollama HTTP / OpenAI / Gemini)
 
 ## Safety Requirements
 - Mandatory plan preview approval before execution
@@ -77,7 +77,7 @@ User Natural Cmd --> |  API     |<-------->|  Auth (future)   |
                           Approval (UI)
                                   v
                           +--------------+
-                          | Orchestrator |---Queue--> BullMQ/Redis
+                          | Orchestrator |---Queue--> RQ/Redis
                           +--+-------+---+
                              |       |
                       Steps Graph   |
@@ -138,21 +138,22 @@ export interface MonitoringAdapter {
 }
 ```
 
-## NestJS Modular Layout (MVP)
-- modules/agents: CommandInterpreterAgent (LangGraph), RAGAdvisorAgent, WatchdogAgent
-- modules/orchestrator: builds execution graph, interacts with adapters
-- modules/adapters: Docker, Git, Shell (whitelist), Monitoring (Prometheus), Vector (Chroma)
-- modules/queue: BullMQ processors & schedulers
-- modules/persistence: ORM and repositories (SQLite → Postgres)
-- common/logging: pino-like structured logging with request/job correlation
-- common/safety: plan approvals, threshold policy
+## FastAPI Modular Layout (MVP)
+- api/: routers (commands, plans, executions, status, rag)
+- agents/: CommandInterpreterAgent (LangGraph), RAGAdvisorAgent, WatchdogAgent
+- orchestrator/: execution graph + step runner
+- adapters/: Docker, Git, Shell (whitelist), Monitoring (Prometheus), Vector (Chroma)
+- queue/: RQ workers + schedulers
+- persistence/: SQLModel/SQLAlchemy + repositories (SQLite → Postgres)
+- common/logging/: structured logging + correlation IDs
+- common/safety/: plan approvals, policy thresholds
 
 ## Scaling Path
-- Split agents and orchestrator into microservices (NestJS modules → services)
+- Split agents and orchestrator into microservices (FastAPI services)
 - SQLite → Postgres (same ORM), Chroma → PGVector
 - Containerize and orchestrate with Kubernetes
 - Event bus (NATS/Kafka) for cross-service decoupling
-- Horizontal scale BullMQ workers via concurrency and shards
+- Horizontal scale RQ workers via concurrency and shards
 - Multi-model support (Ollama local + remote fallbacks)
 
 ## Environment Variables (MVP)

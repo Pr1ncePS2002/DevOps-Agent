@@ -4,12 +4,19 @@ These steps help you start without installing Ollama by using OpenAI or Gemini A
 
 ## 1) Prerequisites
 
-Install Node.js LTS and Git:
+Install Node.js LTS and Git (if `winget` is available):
 
 ```bat
 winget install OpenJS.NodeJS.LTS
 winget install Git.Git
 ```
+
+If `winget` is not available on your machine, install manually:
+- Node.js LTS: https://nodejs.org/
+- Git: https://git-scm.com/downloads
+- Python 3.12 (recommended) or 3.11: https://www.python.org/downloads/
+
+Important: Python 3.14 is currently too new for some critical wheels (e.g., `pydantic-core`) on Windows. If you see pip errors mentioning `pydantic-core` and Rust/Cargo, install Python 3.12 and retry.
 
 Optional (recommended): Docker Desktop to run Redis and other services locally:
 
@@ -24,6 +31,12 @@ If you can't use Docker on Windows, consider Memurai (Redis-compatible) Communit
 ```bat
 cd "c:\Users\psing\Desktop\DevOps Agent"
 npm install
+```
+
+Backend (FastAPI) dependencies are installed via:
+```bat
+cd apps\backend
+scripts\install.cmd
 ```
 
 ## 3) Configure environment
@@ -55,7 +68,7 @@ Edit `.env` and set one of:
 
 ## 4) Redis (for queue)
 
-For BullMQ jobs, run Redis. Easiest via Docker:
+For RQ jobs, run Redis. Easiest via Docker:
 
 ```bat
 docker run --name redis -p 6379:6379 -d redis:7
@@ -65,6 +78,6 @@ Without Docker, install Memurai and set `REDIS_URL=redis://localhost:6379`.
 
 ## 5) Next steps
 
-- Backend scaffold will add NestJS services using the selected LLM provider (OPENAI/GEMINI/OLLAMA) behind a single interface.
+- Backend scaffold will add FastAPI services using the selected LLM provider (OPENAI/GEMINI/OLLAMA) behind a single interface.
 - Frontend scaffold will allow: enter command → preview plan → approve → execute.
 - You can proceed with keys now; no need to install Ollama if using OpenAI or Gemini.
