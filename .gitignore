@@ -11,6 +11,21 @@ dist/
 .turbo/
 coverage/
 
+# TypeScript
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+ENV/
+.Python
+*.egg-info/
+.pytest_cache/
+
 # Env & local
 .env
 .env.*.local
