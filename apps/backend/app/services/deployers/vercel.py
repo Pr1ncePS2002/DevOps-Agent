@@ -32,6 +32,26 @@ class VercelDeployer(BaseDeployer):
         if not self._token:
             return False, "VERCEL_TOKEN is required for Vercel deployments"
         return True, ""
+
+    def _normalize_target(self, environment: str) -> str:
+        """Map user/proj environment strings to Vercel API 'target' values.
+
+        Vercel expects 'production', 'staging', or a custom environment identifier.
+        """
+
+        env = (environment or "").strip().lower()
+        if not env:
+            return "production"
+
+        if env in {"production", "prod", "live", "main"}:
+            return "production"
+
+        # Historically many systems use 'preview' for non-prod; Vercel v13 expects 'staging'.
+        if env in {"staging", "stage", "preview", "dev", "development", "test", "qa"}:
+            return "staging"
+
+        # Allow custom environment identifiers to pass through unchanged.
+        return env
     
     def deploy(
         self,
@@ -55,11 +75,11 @@ class VercelDeployer(BaseDeployer):
         logs: list[str] = []
         
         try:
-            # Map environment to Vercel target
-            target = "production" if environment in ("production", "prod") else "preview"
+            # Map environment to Vercel API 'target'
+            target = self._normalize_target(environment)
             
             logs.append(f"Triggering Vercel deployment for {project_name}")
-            logs.append(f"Target: {target}, Version: {version or 'latest'}")
+            logs.append(f"Environment: {environment} -> Target: {target}, Version: {version or 'latest'}")
             
             # If we have a project ID, we can trigger deployment via API
             if self._project_id:
@@ -137,6 +157,26 @@ class VercelDeployer(BaseDeployer):
                         "deploymentId": latest["uid"],  # Redeploy from this
                     },
                 )
+
+                if redeploy_response.status_code not in (200, 201):
+                    # Do not fall through to the "No deployments found" message.
+                    # Return the actual API error to make debugging possible.
+                    error_text = redeploy_response.text.strip()
+                    logs.append(
+                        f"Redeploy request failed: {redeploy_response.status_code} {error_text}"
+                    )
+                    return DeploymentResult(
+                        success=False,
+                        message=(
+                            "Vercel redeploy request failed. "
+                            f"HTTP {redeploy_response.status_code}: {error_text or 'No details returned'}"
+                        ),
+                        logs=logs,
+                        metadata={
+                            "endpoint": "/v13/deployments",
+                            "latest_uid": latest.get("uid"),
+                        },
+                    )
                 
                 if redeploy_response.status_code in (200, 201):
                     new_deployment = redeploy_response.json()
@@ -152,10 +192,16 @@ class VercelDeployer(BaseDeployer):
                         metadata={"state": new_deployment.get("readyState", "BUILDING")},
                     )
             
-            logs.append("No existing deployments found. Connect your Git repo to Vercel first.")
+            logs.append(
+                "No existing deployments were found for this project. "
+                "Ensure the Vercel project is created and has at least one deployment (e.g., via Git integration)."
+            )
             return DeploymentResult(
                 success=False,
-                message="No deployments found. Please connect your Git repository to Vercel.",
+                message=(
+                    "No deployments found for this Vercel project. "
+                    "Create/connect the project in Vercel and trigger an initial deployment."
+                ),
                 logs=logs,
             )
     
