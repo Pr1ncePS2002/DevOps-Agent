@@ -11,8 +11,14 @@ export type ExecutionStatus = "queued" | "running" | "failed" | "succeeded" | "r
 export interface Project {
   id: number;
   name: string;
+  source_type?: string;
   repo_path?: string | null;
   repo_url?: string | null;
+  workspace_path?: string | null;
+  detected_stack?: string | null;
+  dockerfile_path?: string | null;
+  has_env_file?: boolean;
+  last_known_good_tag?: string | null;
 }
 
 export interface PlanPreview {
@@ -23,6 +29,13 @@ export interface PlanPreview {
   post_steps: string[];
   warnings: string[];
   status: PlanStatus;
+  project_id?: number;
+  repo_path?: string | null;
+  detected_stack?: string | null;
+  dockerfile_path?: string | null;
+  image_tag?: string | null;
+  ports?: string[];
+  env_injected?: boolean;
 }
 
 export interface ExecutionDetail {

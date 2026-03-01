@@ -31,6 +31,40 @@ export async function createProject(payload: {
   return handleResponse<Project>(res);
 }
 
+export async function registerProject(payload: {
+  source_type: "local" | "github";
+  path_or_url: string;
+}): Promise<{
+  project_id: number;
+  name: string;
+  workspace_path: string;
+  detected_stack: string;
+  dockerfile_path: string | null;
+  dockerfile_generated: boolean;
+}> {
+  const res = await fetch(`${API_BASE_URL}/projects/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  return handleResponse(res);
+}
+
+export async function uploadEnv(projectId: number, file: File): Promise<{ status: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_BASE_URL}/projects/${projectId}/env`, {
+    method: "POST",
+    body: formData
+  });
+  return handleResponse(res);
+}
+
+export async function rollbackExecution(executionId: number): Promise<{ status: string; message: string }> {
+  const res = await fetch(`${API_BASE_URL}/executions/${executionId}/rollback`, { method: "POST" });
+  return handleResponse(res);
+}
+
 export async function parseCommand(payload: { project_id: number; text: string }): Promise<PlanPreview> {
   const res = await fetch(`${API_BASE_URL}/commands/parse`, {
     method: "POST",

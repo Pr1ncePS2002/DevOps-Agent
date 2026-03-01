@@ -27,6 +27,13 @@ class PlanPreviewResponse(BaseModel):
     post_steps: list[str]
     warnings: list[str]
     status: str
+    project_id: int
+    repo_path: str | None
+    detected_stack: str | None
+    dockerfile_path: str | None
+    image_tag: str | None
+    ports: list[str]
+    env_injected: bool
 
 
 @router.post("/parse", response_model=PlanPreviewResponse)
@@ -37,11 +44,26 @@ def parse_command(payload: CommandParseRequest) -> PlanPreviewResponse:
             raise HTTPException(status_code=404, detail="Project not found")
 
         parsed = interpret_command(payload.text)
-        warnings = advise_plan(
+        rag_warnings = advise_plan(
             action=parsed["action"],
             environments=parsed["environments"],
             post_steps=parsed["post_steps"],
         )
+
+        from app.services.command_interpreter import build_deployment_plan
+
+        repo_path = project.workspace_path or project.repo_path or ""
+        default_port = 3000 if (project.detected_stack or "node") == "node" else 8000
+        dp = build_deployment_plan(
+            project_id=project.id or 0,
+            repo_path=repo_path,
+            detected_stack=project.detected_stack or "unknown",
+            dockerfile_path=project.dockerfile_path,
+            has_env_file=project.has_env_file,
+            default_port=default_port,
+            parsed=parsed,
+        )
+        warnings = dp["warnings"] + rag_warnings
 
         plan = create_plan(
             session,
@@ -52,6 +74,11 @@ def parse_command(payload: CommandParseRequest) -> PlanPreviewResponse:
             environments=parsed["environments"],
             post_steps=parsed["post_steps"],
             warnings=warnings,
+            detected_stack=dp["detected_stack"],
+            dockerfile_path=dp["dockerfile_path"],
+            image_tag=dp["image_tag"],
+            ports=dp["ports"],
+            env_injected=dp["env_injected"],
         )
 
         return PlanPreviewResponse(
@@ -62,4 +89,11 @@ def parse_command(payload: CommandParseRequest) -> PlanPreviewResponse:
             post_steps=json.loads(plan.post_steps_json),
             warnings=json.loads(plan.warnings_json),
             status=plan.status,
+            project_id=dp["project_id"],
+            repo_path=dp["repo_path"],
+            detected_stack=dp["detected_stack"],
+            dockerfile_path=dp["dockerfile_path"],
+            image_tag=dp["image_tag"],
+            ports=dp.get("ports", []),
+            env_injected=dp["env_injected"],
         )

@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import type { Project } from "@/lib/types";
 import { CommandConsole } from "./command-console";
+import { DeploymentWizard } from "./deployment-wizard";
 import { HistoryPanel } from "./sections/history-panel";
 import { ProjectsPanel } from "./sections/projects-panel";
 import { StatGrid } from "./sections/stat-grid";
@@ -31,7 +32,7 @@ export function DashboardClient({ initialProjects, dryRunEnabled }: DashboardCli
         approvalsThisWeek={approvalsThisWeek}
         incidentsBlocked={incidentsBlocked}
       />
-      <CommandConsole projects={projects} />
+      <DeploymentWizard />
       <section className="grid gap-6 lg:grid-cols-2">
         <ProjectsPanel projects={projects} onProjectsUpdated={handleProjectsUpdated} />
         <HistoryPanel />

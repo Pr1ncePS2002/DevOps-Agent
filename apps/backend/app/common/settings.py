@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Storage
     data_dir: Path = Path("./data")
     database_url: str = "sqlite:///./data/dev.db"  # maps to DATABASE_URL
+    workspace_root: Path = Path("./data/workspace")  # cloned/managed projects
+    allowed_repo_roots: str = ""  # comma-separated paths for local projects
+    encryption_key: str | None = None  # base64 Fernet key for .env encryption
 
     # Queue
     redis_url: str = "redis://localhost:6379"
@@ -54,7 +57,7 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3.1:8b"
 
     # Deployment Providers
-    deploy_provider: str = "local"  # local | vercel | render
+    deploy_provider: str = "docker"  # docker | local | vercel | render
     vercel_token: str | None = None
     vercel_org_id: str | None = None
     vercel_project_id: str | None = None
