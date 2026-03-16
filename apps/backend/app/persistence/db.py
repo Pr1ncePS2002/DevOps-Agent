@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import sqlite3
 from contextlib import contextmanager
 
 from sqlmodel import Session, SQLModel, create_engine
 
+from app.common.logging import logger
 from app.common.settings import get_database_url, settings
 from app.persistence import models  # noqa: F401 - register tables
 
@@ -43,10 +45,12 @@ def _migrate_project_table() -> None:
             try:
                 conn.execute(text(f"ALTER TABLE project ADD COLUMN {col} {spec}"))
                 conn.commit()
-            except Exception:
+            except sqlite3.OperationalError:
                 conn.rollback()
-                # Column likely exists already — safe to ignore
-                pass
+                # Column already exists — safe to ignore
+            except Exception as exc:
+                conn.rollback()
+                logger.warning("migration_failed", column=col, error=str(exc))
 
 
 def init_db() -> None:

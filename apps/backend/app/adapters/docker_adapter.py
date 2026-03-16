@@ -7,9 +7,16 @@ from typing import Callable
 
 from app.common.logging import logger
 
+try:
+    import docker
+    import docker.errors
+except ImportError:
+    docker = None  # type: ignore[assignment]
+
 
 def _get_client():
-    import docker
+    if docker is None:
+        raise RuntimeError("Docker SDK not installed. Run: pip install docker")
     return docker.from_env()
 
 
@@ -20,7 +27,10 @@ def image_exists(image_tag: str) -> bool:
         client = _get_client()
         client.images.get(image_tag)
         return True
-    except Exception:
+    except docker.errors.ImageNotFound:
+        return False
+    except docker.errors.APIError as exc:
+        logger.warning("docker_image_check_failed", image=image_tag, error=str(exc))
         return False
     finally:
         if client:
@@ -37,7 +47,10 @@ def container_exists(container_id: str) -> bool:
         client = _get_client()
         c = client.containers.get(container_id)
         return c is not None
-    except Exception:
+    except docker.errors.NotFound:
+        return False
+    except docker.errors.APIError as exc:
+        logger.warning("docker_container_check_failed", container=container_id, error=str(exc))
         return False
     finally:
         if client:

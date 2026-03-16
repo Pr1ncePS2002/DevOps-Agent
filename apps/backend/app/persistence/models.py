@@ -32,7 +32,7 @@ class Project(SQLModel, table=True):
 
 class Deployment(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    project_id: int = Field(index=True)
+    project_id: int = Field(index=True, foreign_key="project.id")
     execution_id: Optional[int] = None
     container_id: Optional[str] = None
     image_tag: Optional[str] = None
@@ -43,7 +43,7 @@ class Deployment(SQLModel, table=True):
 
 class Plan(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    project_id: int = Field(index=True)
+    project_id: int = Field(index=True, foreign_key="project.id")
     raw_command: str
     action: str
     version: Optional[str] = None
@@ -62,7 +62,7 @@ class Plan(SQLModel, table=True):
 
 class Execution(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    plan_id: int = Field(index=True)
+    plan_id: int = Field(index=True, foreign_key="plan.id")
     status: str = "queued"  # queued|running|failed|succeeded|rolled_back
     logs: str = ""
     correlation_id: Optional[str] = None

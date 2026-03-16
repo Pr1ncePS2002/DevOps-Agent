@@ -68,10 +68,23 @@ class Orchestrator:
         workspace_path = project.workspace_path or project.repo_path
         if not workspace_path:
             raise ValueError("Project has no workspace_path or repo_path")
-        if ".." in workspace_path:
-            raise ValueError("Invalid path: traversal not allowed")
 
         wp = Path(workspace_path).resolve()
+
+        # Security: verify the resolved path is within allowed directories
+        allowed_roots = [settings.workspace_root.resolve()]
+        if settings.allowed_repo_roots:
+            allowed_roots.extend(
+                Path(r.strip()).resolve()
+                for r in settings.allowed_repo_roots.split(",")
+                if r.strip()
+            )
+        if not any(wp == root or root in wp.parents for root in allowed_roots):
+            raise ValueError(
+                f"Invalid path: {wp} is outside allowed directories. "
+                f"Add it to ALLOWED_REPO_ROOTS or move the project to the workspace."
+            )
+
         if not wp.exists():
             raise FileNotFoundError(f"Workspace does not exist: {wp}")
 
