@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import { FolderKanban, Plus } from "lucide-react";
+import { useCallback, useState } from "react";
+import { FolderKanban, Plus, X } from "lucide-react";
 
-import { createProject, fetchProjects } from "@/lib/api";
+import { fetchProjects } from "@/lib/api";
 import type { Project } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { ProjectRegistration } from "@/components/project-registration";
 
 interface ProjectsPanelProps {
   projects: Project[];
@@ -13,122 +14,84 @@ interface ProjectsPanelProps {
 }
 
 export function ProjectsPanel({ projects, onProjectsUpdated }: ProjectsPanelProps) {
-  const [name, setName] = useState("");
-  const [repoPath, setRepoPath] = useState("");
-  const [repoUrl, setRepoUrl] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-
-  const canSubmit = useMemo(() => {
-    if (!name.trim()) return false;
-    if (!!repoPath.trim() && !!repoUrl.trim()) return false;
-    return !!repoPath.trim() || !!repoUrl.trim();
-  }, [name, repoPath, repoUrl]);
+  const [showWizard, setShowWizard] = useState(false);
 
   const refreshProjects = useCallback(async () => {
     const next = await fetchProjects();
     onProjectsUpdated?.(next);
   }, [onProjectsUpdated]);
 
-  const handleSubmit = useCallback(async () => {
-    setError(null);
-
-    if (!name.trim()) {
-      setError("Project name is required.");
-      return;
-    }
-
-    if (!!repoPath.trim() && !!repoUrl.trim()) {
-      setError("Provide either repo path OR repo URL (not both).");
-      return;
-    }
-
-    if (!repoPath.trim() && !repoUrl.trim()) {
-      setError("Provide a local repo path or a repo URL.");
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      await createProject({
-        name: name.trim(),
-        repo_path: repoPath.trim() || null,
-        repo_url: repoUrl.trim() || null
-      });
-
-      setName("");
-      setRepoPath("");
-      setRepoUrl("");
-
-      await refreshProjects();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to create project");
-    } finally {
-      setIsSaving(false);
-    }
-  }, [name, repoPath, repoUrl, refreshProjects]);
+  const handleSuccess = useCallback(async () => {
+    await refreshProjects();
+    setShowWizard(false);
+  }, [refreshProjects]);
 
   return (
     <section className="rounded-3xl border border-white/5 bg-surface-800/70 p-6 shadow-card">
-      <div className="flex items-center gap-3">
-        <FolderKanban className="h-5 w-5 text-accent-300" />
-        <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-white/60">Projects</p>
-          <p className="text-white/80">Synced from backend SQLite registry</p>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <FolderKanban className="h-5 w-5 text-accent-300" />
+          <div>
+            <p className="text-xs uppercase tracking-[0.3em] text-white/60">Projects</p>
+            <p className="text-white/80">Synced from backend registry</p>
+          </div>
         </div>
+        <button
+          type="button"
+          onClick={() => setShowWizard(true)}
+          className="flex items-center gap-1.5 rounded-2xl bg-accent-500/20 px-3 py-2 text-xs font-semibold text-accent-300 transition hover:bg-accent-500/30"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Register Project
+        </button>
       </div>
 
-      <div className="mt-6 rounded-2xl border border-white/5 bg-black/25 p-4">
-        <p className="text-xs uppercase tracking-[0.3em] text-white/60">Add project</p>
-        <div className="mt-3 grid gap-3">
-          <input
-            value={name}
-            onChange={(event: React.ChangeEvent<HTMLInputElement>) => setName(event.target.value)}
-            placeholder="Project name"
-            className="w-full rounded-2xl border border-white/10 bg-black/30 p-3 text-sm text-white/90 focus:border-accent-400 focus:outline-none"
-          />
-          <input
-            value={repoPath}
-            onChange={(event: React.ChangeEvent<HTMLInputElement>) => setRepoPath(event.target.value)}
-            placeholder="Local repo path (e.g. C:\\projects\\my-service)"
-            className="w-full rounded-2xl border border-white/10 bg-black/30 p-3 text-sm text-white/90 focus:border-accent-400 focus:outline-none"
-          />
-          <input
-            value={repoUrl}
-            onChange={(event: React.ChangeEvent<HTMLInputElement>) => setRepoUrl(event.target.value)}
-            placeholder="Repo URL (e.g. https://github.com/org/repo.git)"
-            className="w-full rounded-2xl border border-white/10 bg-black/30 p-3 text-sm text-white/90 focus:border-accent-400 focus:outline-none"
-          />
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs text-white/50">Provide either a local path OR a repo URL.</p>
+      {/* Inline wizard (collapsible) */}
+      {showWizard && (
+        <div className="mt-6 rounded-2xl border border-accent-400/20 bg-black/30 p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <p className="text-xs uppercase tracking-widest text-white/50">New Project</p>
             <button
               type="button"
-              onClick={handleSubmit}
-              disabled={!canSubmit || isSaving}
-              className={cn(
-                "inline-flex items-center justify-center gap-2 rounded-2xl bg-accent-500/80 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-surface-900 transition hover:bg-accent-500",
-                (!canSubmit || isSaving) && "opacity-40"
-              )}
+              onClick={() => setShowWizard(false)}
+              className="text-white/30 hover:text-white/70"
             >
-              <Plus className="h-4 w-4" /> {isSaving ? "Saving…" : "Add project"}
+              <X className="h-4 w-4" />
             </button>
           </div>
-          {error ? <p className="text-sm text-red-300">{error}</p> : null}
+          <ProjectRegistration
+            onSuccess={handleSuccess}
+            onClose={() => setShowWizard(false)}
+          />
         </div>
-      </div>
+      )}
 
+      {/* Project list */}
       <div className="mt-4 divide-y divide-white/5">
         {projects.length === 0 ? (
-          <p className="py-6 text-sm text-white/60">Add a project via the backend API to see it here.</p>
+          <p className="py-6 text-sm text-white/60">
+            No projects yet. Click <span className="text-accent-300">Register Project</span> to add one.
+          </p>
         ) : (
           projects.map((project) => (
             <article key={project.id} className="py-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-lg font-display text-white">{project.name}</p>
-                  <p className="text-xs uppercase tracking-[0.3em] text-white/40">ID #{project.id}</p>
+                  {project.description && (
+                    <p className="mt-0.5 text-xs text-white/50">{project.description}</p>
+                  )}
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    <Badge>{project.detected_stack ?? "?"}</Badge>
+                    {project.deployment_platform && (
+                      <Badge accent>{project.deployment_platform}</Badge>
+                    )}
+                    {project.has_env_file && <Badge>env ✓</Badge>}
+                  </div>
                 </div>
-                <div className="text-right text-xs text-white/60">
+                <div className="shrink-0 text-right text-xs text-white/60">
+                  <p className="text-white/30">#{project.id}</p>
                   {project.repo_url ? (
                     <a
                       href={project.repo_url}
@@ -136,10 +99,10 @@ export function ProjectsPanel({ projects, onProjectsUpdated }: ProjectsPanelProp
                       rel="noreferrer"
                       className="text-accent-300 hover:text-accent-200"
                     >
-                      repo
+                      repo ↗
                     </a>
                   ) : (
-                    <span>{project.repo_path ?? "Local only"}</span>
+                    <span className="font-mono text-white/30">{project.repo_path ?? "local"}</span>
                   )}
                 </div>
               </div>
@@ -148,5 +111,18 @@ export function ProjectsPanel({ projects, onProjectsUpdated }: ProjectsPanelProp
         )}
       </div>
     </section>
+  );
+}
+
+function Badge({ children, accent }: { children: React.ReactNode; accent?: boolean }) {
+  return (
+    <span
+      className={cn(
+        "rounded-lg px-2 py-0.5 text-xs",
+        accent ? "bg-accent-500/15 text-accent-300" : "bg-white/5 text-white/50"
+      )}
+    >
+      {children}
+    </span>
   );
 }

@@ -3,7 +3,6 @@
 import { useCallback, useMemo, useState } from "react";
 
 import type { Project } from "@/lib/types";
-import { CommandConsole } from "./command-console";
 import { DeploymentWizard } from "./deployment-wizard";
 import { HistoryPanel } from "./sections/history-panel";
 import { ProjectsPanel } from "./sections/projects-panel";

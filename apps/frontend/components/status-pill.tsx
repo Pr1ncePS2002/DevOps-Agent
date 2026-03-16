@@ -11,15 +11,20 @@ const COLOR_MAP: Record<PlanStatus | ExecutionStatus, string> = {
   queued: "bg-purple-500/20 text-purple-100 border-purple-400/40"
 };
 
-export function StatusPill({ status }: { status: PlanStatus | ExecutionStatus }) {
+const FALLBACK_COLOR = "bg-gray-500/20 text-gray-200 border-gray-400/40";
+
+export function StatusPill({ status }: { status: PlanStatus | ExecutionStatus | string | undefined }) {
+  const label = status ? status.replace(/_/g, " ") : "unknown";
+  const color = status ? (COLOR_MAP[status as PlanStatus | ExecutionStatus] ?? FALLBACK_COLOR) : FALLBACK_COLOR;
+
   return (
     <span
       className={cn(
         "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wide",
-        COLOR_MAP[status]
+        color
       )}
     >
-      {status.replace(/_/g, " ")}
+      {label}
     </span>
   );
 }

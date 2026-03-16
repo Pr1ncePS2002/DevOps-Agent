@@ -1,4 +1,4 @@
-import { ArrowUpRight, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 
 export function HeroBanner() {
   return (
@@ -19,16 +19,16 @@ export function HeroBanner() {
           </p>
           <div className="flex flex-wrap gap-4 text-sm text-white/70">
             <span>Deterministic command parser</span>
-            <span className="text-white/40">•</span>
+            <span className="text-white/40">&bull;</span>
             <span>Policy guardrail warnings</span>
-            <span className="text-white/40">•</span>
+            <span className="text-white/40">&bull;</span>
             <span>Manual approval before run</span>
           </div>
         </div>
-        <button className="group relative flex items-center gap-3 rounded-full border border-accent-400/40 px-6 py-3 text-sm font-semibold uppercase tracking-wide text-accent-300">
-          Launch Runbook Studio
-          <ArrowUpRight className="h-4 w-4 transition group-hover:translate-x-1 group-hover:-translate-y-1" />
-        </button>
+        <div className="shrink-0 rounded-2xl border border-accent-400/20 bg-accent-500/10 px-5 py-4 text-center">
+          <p className="text-xs uppercase tracking-widest text-accent-300/60">Quick start</p>
+          <p className="mt-1 text-sm text-white/70">Use the <span className="text-accent-300 font-semibold">Launch Full Demo</span> button below</p>
+        </div>
       </div>
     </section>
   );
