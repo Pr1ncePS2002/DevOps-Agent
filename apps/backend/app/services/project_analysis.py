@@ -9,9 +9,9 @@ NODE_DOCKERFILE = '''# Auto-generated for Node.js project
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm install
 COPY . .
-RUN npm run build 2>/dev/null || true
+RUN npm run build || echo "No build script found — skipping"
 
 FROM node:20-alpine
 WORKDIR /app
@@ -25,21 +25,22 @@ CMD ["npm", "start"]
 PYTHON_DOCKERFILE = '''# Auto-generated for Python project
 FROM python:3.11-slim
 WORKDIR /app
-COPY . .
+COPY requirements.txt* pyproject.toml* ./
 RUN pip install --no-cache-dir -r requirements.txt 2>/dev/null || pip install -e . 2>/dev/null || true
+COPY . .
 EXPOSE 8000
 CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 '''
 
 
 def detect_stack(workspace_path: Path) -> str:
-    """Detect project type: node, python, or docker."""
-    if (workspace_path / "Dockerfile").exists() or (workspace_path / "dockerfile").exists():
-        return "docker"
+    """Detect project type: node, python, or unknown. Checks source files first."""
     if (workspace_path / "package.json").exists():
         return "node"
     if (workspace_path / "requirements.txt").exists() or (workspace_path / "pyproject.toml").exists():
         return "python"
+    if (workspace_path / "Dockerfile").exists() or (workspace_path / "dockerfile").exists():
+        return "docker"
     return "unknown"
 
 
@@ -58,7 +59,11 @@ def generate_dockerfile(workspace_path: Path, stack: str) -> Path:
     elif stack == "python":
         content = PYTHON_DOCKERFILE
     else:
-        content = NODE_DOCKERFILE  # fallback
+        # BUG FIX: raise instead of silently falling back to Node template for unknown stacks
+        raise ValueError(
+            f"Cannot auto-generate Dockerfile for stack '{stack}'. "
+            "Add a Dockerfile manually or ensure your project has package.json (Node) or requirements.txt (Python)."
+        )
     path = workspace_path / "Dockerfile"
     path.write_text(content)
     logger.bind(component="project-analysis").info("dockerfile_generated", path=str(path), stack=stack)
@@ -91,6 +96,7 @@ def analyze_project(workspace_path: Path) -> dict:
             dockerfile_path = str(p)
             generated = True
         else:
+            # Stack is "unknown" — no Dockerfile can be generated
             dockerfile_path = None
 
     default_port = 3000 if stack == "node" else 8000

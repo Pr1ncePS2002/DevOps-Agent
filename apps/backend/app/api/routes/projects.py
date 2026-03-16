@@ -14,63 +14,49 @@ from app.persistence.repositories import (
 )
 from app.services.env_storage import store_env, validate_env_format
 from app.services.project_analysis import analyze_project
-from app.services.project_registration import register_project
-
+from app.services.registration import (
+    ProjectRegistrationService,
+    RegisterProjectPayload,
+    RegisterProjectResponse,
+)
 
 router = APIRouter()
 
-
-# --- Register flow ---
-
-
-class RegisterRequest(BaseModel):
-    source_type: str = Field(..., pattern="^(local|github)$")
-    path_or_url: str = Field(..., min_length=1, max_length=2000)
+# ── Unified registration (NEW) ────────────────────────────────────────────────
 
 
-class RegisterResponse(BaseModel):
-    project_id: int
-    name: str
-    workspace_path: str
-    detected_stack: str
-    dockerfile_path: str | None
-    dockerfile_generated: bool
+@router.post("/register")
+def register_project_endpoint(payload: RegisterProjectPayload):
+    """
+    Single unified project registration endpoint.
 
+    Accepts a structured payload with:
+      - source (local path or GitHub URL + branch)
+      - deployment platform (local | docker | vercel | render)
+      - env key-value pairs
 
-@router.post("/register", response_model=RegisterResponse)
-def register_project_endpoint(payload: RegisterRequest) -> RegisterResponse:
-    """Register a project from local path or GitHub URL. Validates, clones if GitHub, analyzes stack."""
+    Validates source×platform compatibility, resolves/clones workspace,
+    analyses stack (auto-generates Dockerfile if missing), and persists the project record.
+    """
+    from fastapi.responses import JSONResponse
+
     try:
-        workspace_path, name = register_project(payload.source_type, payload.path_or_url)
-    except (FileNotFoundError, ValueError, PermissionError, RuntimeError) as e:
+        with session_scope() as session:
+            result = ProjectRegistrationService().register(
+                session=session,
+                payload=payload,
+            )
+            # Serialize with camelCase aliases so frontend gets projectId, workspacePath, etc.
+            return JSONResponse(content=result.model_dump(by_alias=True))
+    except (FileNotFoundError, PermissionError) as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-    analysis = analyze_project(workspace_path)
-
-    with session_scope() as session:
-        project = create_project(
-            session,
-            name=name,
-            source_type=payload.source_type,
-            repo_path=str(workspace_path) if payload.source_type == "local" else None,
-            repo_url=payload.path_or_url if payload.source_type == "github" else None,
-            workspace_path=str(workspace_path),
-            detected_stack=analysis["detected_stack"],
-            dockerfile_path=analysis.get("dockerfile_path"),
-        )
-        pid = project.id or 0
-
-    return RegisterResponse(
-        project_id=pid,
-        name=name,
-        workspace_path=str(workspace_path),
-        detected_stack=analysis["detected_stack"],
-        dockerfile_path=analysis.get("dockerfile_path"),
-        dockerfile_generated=analysis.get("dockerfile_generated", False),
-    )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-# --- Env upload ---
+# ── Env upload ────────────────────────────────────────────────────────────────
 
 
 @router.post("/{project_id}/env")
@@ -104,7 +90,7 @@ def upload_env_endpoint(project_id: int, file: UploadFile = File(...)) -> dict:
     return {"status": "ok", "message": "Env file stored"}
 
 
-# --- Analyze (for re-analysis after Dockerfile edit) ---
+# ── Re-analyze ────────────────────────────────────────────────────────────────
 
 
 class AnalyzeResponse(BaseModel):
@@ -133,35 +119,70 @@ def analyze_project_endpoint(project_id: int) -> AnalyzeResponse:
     )
 
 
-# --- Legacy + list ---
-
-
-class ProjectCreateRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
-    repo_path: str | None = None
-    repo_url: str | None = None
+# ── Project list & full detail ────────────────────────────────────────────────
 
 
 class ProjectResponse(BaseModel):
     id: int
     name: str
+    description: str
     source_type: str
     repo_path: str | None
     repo_url: str | None
+    branch: str | None
     workspace_path: str | None
     detected_stack: str | None
     dockerfile_path: str | None
     has_env_file: bool
     last_known_good_tag: str | None
+    deployment_platform: str
+    env_warnings: list[str] = []
 
 
-@router.post("", response_model=ProjectResponse)
-def create_project_endpoint(payload: ProjectCreateRequest) -> ProjectResponse:
+@router.get("", response_model=list[ProjectResponse])
+def list_projects_endpoint() -> list[ProjectResponse]:
+    with session_scope() as session:
+        projects = list_projects(session)
+        return [
+            ProjectResponse(
+                id=p.id or 0,
+                name=p.name,
+                description=getattr(p, "description", ""),
+                source_type=getattr(p, "source_type", "local"),
+                repo_path=p.repo_path,
+                repo_url=p.repo_url,
+                branch=getattr(p, "branch", None),
+                workspace_path=getattr(p, "workspace_path", None),
+                detected_stack=getattr(p, "detected_stack", None),
+                dockerfile_path=getattr(p, "dockerfile_path", None),
+                has_env_file=getattr(p, "has_env_file", False),
+                last_known_good_tag=getattr(p, "last_known_good_tag", None),
+                deployment_platform=getattr(p, "deployment_platform", "docker"),
+            )
+            for p in projects
+        ]
+
+
+# ── LEGACY: kept for backward compatibility (test_command_parse.py) ───────────
+# DEPRECATED: use POST /projects/register instead.
+
+
+class _LegacyProjectCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    repo_path: str | None = None
+    repo_url: str | None = None
+
+
+@router.post("", response_model=ProjectResponse, include_in_schema=False)
+def _legacy_create_project_endpoint(payload: _LegacyProjectCreateRequest) -> ProjectResponse:
+    """
+    DEPRECATED legacy endpoint. Use POST /projects/register.
+    Kept only so existing tests and integrations don't break.
+    """
     if not payload.repo_path and not payload.repo_url:
         raise HTTPException(status_code=400, detail="Provide repo_path or repo_url")
 
     source_type = "github" if payload.repo_url else "local"
-    path_or_url = payload.repo_url or payload.repo_path or ""
 
     with session_scope() as session:
         project = create_project(
@@ -176,33 +197,15 @@ def create_project_endpoint(payload: ProjectCreateRequest) -> ProjectResponse:
     return ProjectResponse(
         id=p.id or 0,
         name=p.name,
+        description=getattr(p, "description", ""),
         source_type=p.source_type,
         repo_path=p.repo_path,
         repo_url=p.repo_url,
+        branch=getattr(p, "branch", None),
         workspace_path=p.workspace_path,
         detected_stack=p.detected_stack,
         dockerfile_path=p.dockerfile_path,
         has_env_file=p.has_env_file,
         last_known_good_tag=p.last_known_good_tag,
+        deployment_platform=getattr(p, "deployment_platform", "docker"),
     )
-
-
-@router.get("", response_model=list[ProjectResponse])
-def list_projects_endpoint() -> list[ProjectResponse]:
-    with session_scope() as session:
-        projects = list_projects(session)
-        return [
-            ProjectResponse(
-                id=p.id or 0,
-                name=p.name,
-                source_type=getattr(p, "source_type", "local"),
-                repo_path=p.repo_path,
-                repo_url=p.repo_url,
-                workspace_path=getattr(p, "workspace_path", None),
-                detected_stack=getattr(p, "detected_stack", None),
-                dockerfile_path=getattr(p, "dockerfile_path", None),
-                has_env_file=getattr(p, "has_env_file", False),
-                last_known_good_tag=getattr(p, "last_known_good_tag", None),
-            )
-            for p in projects
-        ]

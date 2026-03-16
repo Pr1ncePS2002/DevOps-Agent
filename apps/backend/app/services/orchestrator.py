@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import json
+import time
 import uuid
 from pathlib import Path
 
 from app.adapters.docker_adapter import (
     build_image,
-    container_exists,
     container_health_check,
     remove_container_safe,
     run_container,
@@ -46,12 +46,16 @@ class Orchestrator:
         cid = str(uuid.uuid4())[:8]
         _log(session, execution, f"[{cid}] Starting deployment pipeline")
 
-        deploy_provider = (settings.deploy_provider or "docker").lower()
+        # BUG FIX: use per-project deployment_platform, not global settings.deploy_provider
+        deploy_provider = (
+            getattr(project, "deployment_platform", None)
+            or settings.deploy_provider
+            or "docker"
+        ).lower()
         if deploy_provider in ("vercel", "render"):
             self._deploy_to_cloud(project, plan, execution, session)
             return
 
-        # Local Docker flow
         try:
             self._deploy_docker(project, plan, execution, session, cid)
         except Exception as exc:
@@ -87,7 +91,7 @@ class Orchestrator:
             raise ValueError("No .env file. Upload env before deployment.")
         _log(session, execution, "  ✓ Env file present")
 
-        # 2. Git pull (if GitHub) - skip for now to keep deterministic; add subprocess git pull if needed
+        # 2. Git pull (if GitHub) - skip for now to keep deterministic
         _log(session, execution, "[2/6] Git pull (skipped for local)")
 
         # 3. Docker build
@@ -116,12 +120,28 @@ class Orchestrator:
             if latest:
                 update_deployment(session, latest, status="stopped")
 
-        # 5. Docker run with --env-file
+        # 5. Docker run with env vars
         _log(session, execution, "[4/6] Starting container")
         env_file = get_env_for_docker(project.id or 0)
         if not env_file:
             raise ValueError("Env file not available for container")
-        ports_dict = {"3000/tcp": "3000", "8000/tcp": "8000"}
+
+        # Parse APP_PORT out of the env file if available
+        app_port = None
+        if Path(env_file).exists():
+            for line in Path(env_file).read_text().splitlines():
+                if line.startswith("APP_PORT="):
+                    val = line.split("=", 1)[1].strip().strip("\"'")
+                    if val.isdigit():
+                        app_port = val
+                    break
+
+        if not app_port:
+            app_port = "3000" if project.detected_stack == "node" else "8000"
+
+        ports_dict = {f"{app_port}/tcp": app_port}
+
+        # Override with plan ports if AI agent specified them
         ports_json = plan.ports_json or "[]"
         try:
             ports_list = json.loads(ports_json)
@@ -141,14 +161,12 @@ class Orchestrator:
         container_id = result
         _log(session, execution, f"  ✓ Container started: {container_id[:12]}")
 
-        # 6. Health check
+        # 6. Health check (with retries handled inside adapter)
         _log(session, execution, "[5/6] Health check")
-        import time
-        time.sleep(2)
-        if not container_health_check(container_id):
+        if not container_health_check(container_id, retries=5, interval=2.0):
             remove_container_safe(container_id)
             raise RuntimeError("Container failed health check (not running)")
-        _log(session, execution, "  ✓ Container running")
+        _log(session, execution, "  ✓ Container is running")
 
         # 7. Register deployment + store last-known-good
         _log(session, execution, "[6/6] Registering deployment")
@@ -163,19 +181,35 @@ class Orchestrator:
         update_project(session, project, last_known_good_tag=image_tag)
         _log(session, execution, f"  ✓ Deployment registered. Last-known-good: {image_tag}")
 
+        try:
+            primary_port = list(ports_dict.values())[0] if ports_dict else "unknown"
+            _log(session, execution, "")
+            _log(session, execution, f"🚀 **App is live at: http://localhost:{primary_port}**")
+        except Exception:
+            pass
+
     def _deploy_to_cloud(
         self, project: Project, plan: Plan, execution: Execution, session
     ) -> None:
-        """Cloud providers (Vercel, Render). Kept for compatibility."""
+        """Cloud providers (Vercel, Render)."""
         from app.services.deployers import get_deployer
 
-        deployer = get_deployer(settings.deploy_provider)
+        # BUG FIX: use project-level platform, not global settings.deploy_provider
+        provider = (
+            getattr(project, "deployment_platform", None)
+            or settings.deploy_provider
+        )
+        deployer = get_deployer(provider)
         is_valid, error = deployer.validate_config()
         if not is_valid:
             _log(session, execution, f"ERROR: {error}")
             raise ValueError(error)
 
         environments = json.loads(plan.environments_json)
+        # BUG FIX: if no environments specified, default to ["production"]
+        if not environments:
+            environments = ["production"]
+
         for env in environments:
             _log(session, execution, f"Deploying to {env}...")
             result = deployer.deploy(

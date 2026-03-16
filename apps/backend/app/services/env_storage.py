@@ -1,7 +1,6 @@
 """Store .env files. Encrypted if ENCRYPTION_KEY set; else restricted path. Never log secrets."""
 from __future__ import annotations
 
-import base64
 from pathlib import Path
 
 from app.common.logging import logger
@@ -38,7 +37,7 @@ def store_env(project_id: int, content: bytes) -> None:
 
 
 def load_env_path(project_id: int) -> Path | None:
-    """Return path to decrypted .env file (writes temp decrypted for Docker --env-file)."""
+    """Return path to stored .env file (may be encrypted)."""
     path = _project_env_path(project_id)
     if not path.exists():
         return None
@@ -46,7 +45,7 @@ def load_env_path(project_id: int) -> Path | None:
 
 
 def get_env_for_docker(project_id: int) -> Path | None:
-    """Return path to .env file usable by Docker. Decrypts if needed into temp file."""
+    """Return path to plaintext .env file usable by Docker. Decrypts if needed into temp file."""
     path = _project_env_path(project_id)
     if not path.exists():
         return None
@@ -57,6 +56,16 @@ def get_env_for_docker(project_id: int) -> Path | None:
         tmp.write_bytes(dec)
         return tmp
     return path
+
+
+def cleanup_decrypted(project_id: int) -> None:
+    """Remove decrypted temp file after Docker has read it."""
+    tmp = _project_env_path(project_id).parent / ".env.decrypted"
+    try:
+        if tmp.exists():
+            tmp.unlink()
+    except OSError:
+        pass
 
 
 def validate_env_format(content: str) -> tuple[bool, str]:

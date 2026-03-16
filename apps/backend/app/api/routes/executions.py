@@ -43,8 +43,6 @@ def approve_plan(plan_id: int) -> ApproveResponse:
         update_plan_status(session, plan, "approved")
         execution = create_execution(session, plan_id)
 
-        # Enqueue inside session scope so we can mark execution failed if enqueue fails.
-        # Avoids orphaned executions (status=queued with no RQ job).
         try:
             queue = get_queue()
             job = queue.enqueue("app.queue.tasks.execute_plan", execution.id)
@@ -86,11 +84,16 @@ def rollback_execution(execution_id: int) -> dict:
         env_file = get_env_for_docker(project.id or 0)
         if not env_file:
             raise HTTPException(status_code=400, detail="No env file for rollback")
+
+        # BUG FIX: derive ports from project stack instead of hardcoding
+        default_port = "3000" if project.detected_stack == "node" else "8000"
+        ports = {f"{default_port}/tcp": default_port}
+
         ok, result = run_container(
             tag,
-            name=f"devops-rollback-{project.id}",
+            name=f"devops-rollback-{project.id}"[:63],
             env_file=Path(env_file),
-            ports={"3000/tcp": "3000", "8000/tcp": "8000"},
+            ports=ports,
         )
         if not ok:
             raise HTTPException(status_code=500, detail=f"Rollback failed: {result}")

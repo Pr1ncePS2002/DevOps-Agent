@@ -18,18 +18,25 @@ engine = create_engine(
 
 
 def _migrate_project_table() -> None:
-    """Add new columns to project table for existing DBs."""
+    """Add new columns to project table for existing DBs without dropping data."""
     if not db_url.startswith("sqlite"):
         return
     from sqlalchemy import text
 
     columns_to_add = [
+        # Original columns
         ("source_type", "TEXT DEFAULT 'local'"),
         ("workspace_path", "TEXT"),
         ("detected_stack", "TEXT"),
         ("dockerfile_path", "TEXT"),
         ("has_env_file", "INTEGER DEFAULT 0"),
         ("last_known_good_tag", "TEXT"),
+        # New columns added for unified registration (Phase 2)
+        ("description", "TEXT NOT NULL DEFAULT ''"),
+        ("branch", "TEXT"),
+        ("deployment_platform", "TEXT NOT NULL DEFAULT 'docker'"),
+        ("deployment_config_json", "TEXT NOT NULL DEFAULT '{}'"),
+        ("env_config_json", "TEXT NOT NULL DEFAULT '{}'"),
     ]
     with engine.connect() as conn:
         for col, spec in columns_to_add:
@@ -38,7 +45,7 @@ def _migrate_project_table() -> None:
                 conn.commit()
             except Exception:
                 conn.rollback()
-                # Column likely exists
+                # Column likely exists already — safe to ignore
                 pass
 
 
@@ -50,5 +57,5 @@ def init_db() -> None:
 
 @contextmanager
 def session_scope() -> Session:
-    with Session(engine) as session:
+    with Session(engine, expire_on_commit=False) as session:
         yield session

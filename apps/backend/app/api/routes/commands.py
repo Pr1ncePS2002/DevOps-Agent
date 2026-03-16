@@ -94,6 +94,6 @@ def parse_command(payload: CommandParseRequest) -> PlanPreviewResponse:
             detected_stack=dp["detected_stack"],
             dockerfile_path=dp["dockerfile_path"],
             image_tag=dp["image_tag"],
-            ports=dp.get("ports", []),
+            ports=json.loads(plan.ports_json),
             env_injected=dp["env_injected"],
         )

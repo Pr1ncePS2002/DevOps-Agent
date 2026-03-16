@@ -49,7 +49,8 @@ def build_deployment_plan(
     Build structured DeploymentPlan from project + parsed command.
     Enforces: no execution without env file, no execution without Dockerfile.
     """
-    image_tag = f"devops-cmd-{project_id}:{parsed.get('version', 'latest')}"
+    version = parsed.get("version") or "latest"
+    image_tag = f"devops-cmd-{project_id}:{version}"
     ports = [f"{default_port}:{default_port}"]
     warnings: list[str] = []
 

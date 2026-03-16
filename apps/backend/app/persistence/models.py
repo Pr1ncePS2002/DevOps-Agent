@@ -13,14 +13,20 @@ def _utc_now() -> datetime:
 class Project(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
-    source_type: str = "local"  # local | github
-    repo_path: Optional[str] = None  # local path or workspace subdir after clone
-    repo_url: Optional[str] = None  # for github
-    workspace_path: Optional[str] = None  # resolved path (local or cloned)
-    detected_stack: Optional[str] = None  # node | python | docker
-    dockerfile_path: Optional[str] = None  # path to Dockerfile
+    description: str = ""                       # user-provided description
+    source_type: str = "local"                  # local | github
+    repo_path: Optional[str] = None             # local path or workspace subdir after clone
+    repo_url: Optional[str] = None              # for github
+    branch: Optional[str] = None                # git branch (github only)
+    workspace_path: Optional[str] = None        # resolved path (local or cloned)
+    detected_stack: Optional[str] = None        # node | python | docker
+    dockerfile_path: Optional[str] = None       # path to Dockerfile
     has_env_file: bool = False
-    last_known_good_tag: Optional[str] = None  # for rollback
+    last_known_good_tag: Optional[str] = None   # for rollback
+    # Deployment metadata (set at registration time)
+    deployment_platform: str = "docker"         # local | docker | vercel | render
+    deployment_config_json: str = "{}"          # platform-specific config (JSON)
+    env_config_json: str = "{}"                 # registered env key names (not secrets)
     created_at: datetime = Field(default_factory=_utc_now)
 
 

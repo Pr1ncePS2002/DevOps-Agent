@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Callable
 
 from app.common.logging import logger
 
@@ -14,6 +15,7 @@ def _get_client():
 
 def image_exists(image_tag: str) -> bool:
     """Check if image exists locally."""
+    client = None
     try:
         client = _get_client()
         client.images.get(image_tag)
@@ -21,14 +23,16 @@ def image_exists(image_tag: str) -> bool:
     except Exception:
         return False
     finally:
-        try:
-            client.close()
-        except Exception:
-            pass
+        if client:
+            try:
+                client.close()
+            except Exception:
+                pass
 
 
 def container_exists(container_id: str) -> bool:
     """Check if container exists (running or stopped)."""
+    client = None
     try:
         client = _get_client()
         c = client.containers.get(container_id)
@@ -36,10 +40,11 @@ def container_exists(container_id: str) -> bool:
     except Exception:
         return False
     finally:
-        try:
-            client.close()
-        except Exception:
-            pass
+        if client:
+            try:
+                client.close()
+            except Exception:
+                pass
 
 
 def remove_container_safe(container_id: str | None, timeout: int = 10) -> bool:
@@ -47,6 +52,7 @@ def remove_container_safe(container_id: str | None, timeout: int = 10) -> bool:
     if not container_id:
         return True
     log = logger.bind(component="docker-adapter")
+    client = None
     try:
         client = _get_client()
         try:
@@ -59,10 +65,11 @@ def remove_container_safe(container_id: str | None, timeout: int = 10) -> bool:
             log.warning("container_remove_failed", container_id=container_id, error=str(e))
             return False
     finally:
-        try:
-            client.close()
-        except Exception:
-            pass
+        if client:
+            try:
+                client.close()
+            except Exception:
+                pass
 
 
 def build_image(
@@ -71,16 +78,16 @@ def build_image(
     tag: str,
     *,
     timeout: int = 600,
-    log_callback: callable = None,
+    log_callback: Callable[[str], None] | None = None,
 ) -> tuple[bool, str]:
     """Build Docker image. Stream build logs via callback. Returns (success, message)."""
     import docker
 
     log = logger.bind(component="docker-adapter")
     context_str = str(context_path.resolve())
-    dockerfile_dir = str(dockerfile_path.parent)
     dockerfile_name = dockerfile_path.name
 
+    client = None
     try:
         client = _get_client()
         try:
@@ -104,7 +111,8 @@ def build_image(
             log.info("docker_build_success", tag=tag)
             return True, f"Built {tag}"
         finally:
-            client.close()
+            if client:
+                client.close()
     except docker.errors.BuildError as e:
         msg = str(e)
         log.exception("docker_build_failed", error=msg)
@@ -142,6 +150,7 @@ def run_container(
 
     log = logger.bind(component="docker-adapter")
 
+    client = None
     try:
         client = _get_client()
         try:
@@ -163,7 +172,8 @@ def run_container(
             log.info("container_started", container_id=cid, image=image_tag)
             return True, cid
         finally:
-            client.close()
+            if client:
+                client.close()
     except docker.errors.ImageNotFound:
         return False, f"Image {image_tag} not found"
     except Exception as e:
@@ -172,15 +182,29 @@ def run_container(
         return False, msg
 
 
-def container_health_check(container_id: str) -> bool:
-    """Check if container is running."""
-    try:
-        client = _get_client()
+def container_health_check(
+    container_id: str,
+    *,
+    retries: int = 5,
+    interval: float = 2.0,
+) -> bool:
+    """Check if container is running, with retries."""
+    for attempt in range(retries):
+        client = None
         try:
+            client = _get_client()
             c = client.containers.get(container_id)
             c.reload()
-            return c.status == "running"
+            if c.status == "running":
+                return True
+        except Exception:
+            pass
         finally:
-            client.close()
-    except Exception:
-        return False
+            if client:
+                try:
+                    client.close()
+                except Exception:
+                    pass
+        if attempt < retries - 1:
+            time.sleep(interval)
+    return False
