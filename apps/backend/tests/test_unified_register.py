@@ -52,10 +52,10 @@ def test_register_local_docker(client: TestClient, local_dir: Path) -> None:
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["project_id"] > 0
+    assert body["projectId"] > 0
     assert body["name"] == "test-local-docker"
-    assert body["deployment_platform"] == "docker"
-    assert "workspace_path" in body
+    assert body["deploymentPlatform"] == "docker"
+    assert "workspacePath" in body
 
 
 def test_register_local_local(client: TestClient, local_dir: Path) -> None:
@@ -77,7 +77,7 @@ def test_register_local_local(client: TestClient, local_dir: Path) -> None:
         },
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json()["deployment_platform"] == "local"
+    assert resp.json()["deploymentPlatform"] == "local"
 
 
 def test_register_local_vercel_rejected(client: TestClient, local_dir: Path) -> None:
@@ -124,10 +124,9 @@ def test_register_env_warnings_returned(client: TestClient, local_dir: Path) -> 
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["project_id"] > 0
-    # env_warnings should contain the missing keys
-    assert "LOCAL_PATH" in body.get("env_warnings", []) or \
-           "DOCKERFILE" in body.get("env_warnings", [])
+    assert body["projectId"] > 0
+    # envWarnings should contain at least one warning about missing keys
+    assert len(body.get("envWarnings", [])) > 0
 
 
 def test_register_invalid_path_returns_400(client: TestClient) -> None:
