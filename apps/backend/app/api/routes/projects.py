@@ -65,11 +65,6 @@ def upload_env_endpoint(project_id: int, file: UploadFile = File(...)) -> dict:
     if not file.filename or not file.filename.lower().endswith(".env"):
         raise HTTPException(status_code=400, detail="File must be .env")
 
-    with session_scope() as session:
-        project = get_project(session, project_id)
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
-
     content = file.file.read()
     try:
         text = content.decode("utf-8")
@@ -80,12 +75,13 @@ def upload_env_endpoint(project_id: int, file: UploadFile = File(...)) -> dict:
     if not valid:
         raise HTTPException(status_code=400, detail=err)
 
-    store_env(project_id, content)
-
     with session_scope() as session:
-        proj = get_project(session, project_id)
-        if proj:
-            update_project(session, proj, has_env_file=True)
+        project = get_project(session, project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        store_env(project_id, content)
+        update_project(session, project, has_env_file=True)
 
     return {"status": "ok", "message": "Env file stored"}
 

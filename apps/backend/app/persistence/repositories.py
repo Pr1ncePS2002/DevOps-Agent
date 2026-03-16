@@ -7,6 +7,40 @@ from sqlmodel import Session, select
 
 from app.persistence.models import Deployment, Execution, Plan, Project
 
+# ── Status transition state machines ──────────────────────────────────────────
+# Each key maps to the set of valid next statuses.
+
+PLAN_TRANSITIONS: dict[str, set[str]] = {
+    "pending_approval": {"approved", "rejected"},
+    "approved":         {"running", "failed"},
+    "running":          {"succeeded", "failed"},
+    "succeeded":        set(),
+    "failed":           {"pending_approval"},  # allow retry
+    "rejected":         set(),
+}
+
+EXECUTION_TRANSITIONS: dict[str, set[str]] = {
+    "queued":      {"running", "failed"},
+    "running":     {"succeeded", "failed", "rolled_back"},
+    "succeeded":   set(),
+    "failed":      {"rolled_back"},
+    "rolled_back": set(),
+}
+
+
+def _validate_transition(
+    current: str, target: str, transitions: dict[str, set[str]], entity: str
+) -> None:
+    """Raise ValueError if the status transition is not allowed."""
+    allowed = transitions.get(current)
+    if allowed is None:
+        raise ValueError(f"Unknown {entity} status: {current!r}")
+    if target not in allowed:
+        raise ValueError(
+            f"Invalid {entity} transition: {current!r} → {target!r}. "
+            f"Allowed: {allowed or 'none (terminal state)'}"
+        )
+
 
 def create_project(
     session: Session,
@@ -124,6 +158,7 @@ def get_plan(session: Session, plan_id: int) -> Plan | None:
 
 
 def update_plan_status(session: Session, plan: Plan, status: str) -> Plan:
+    _validate_transition(plan.status, status, PLAN_TRANSITIONS, "plan")
     plan.status = status
     plan.updated_at = datetime.now(timezone.utc)
     session.add(plan)
@@ -207,6 +242,7 @@ def update_deployment(
 
 
 def set_execution_status(session: Session, execution: Execution, status: str) -> Execution:
+    _validate_transition(execution.status, status, EXECUTION_TRANSITIONS, "execution")
     execution.status = status
     if status == "running" and execution.started_at is None:
         execution.started_at = datetime.now(timezone.utc)

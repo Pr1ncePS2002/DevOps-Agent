@@ -187,8 +187,37 @@ class TestExecutionCRUD:
             post_steps=[], warnings=[],
         )
         ex = repo.create_execution(session, plan.id)
+        # Must follow valid transition chain: queued → running → succeeded
+        repo.set_execution_status(session, ex, "running")
         repo.set_execution_status(session, ex, "succeeded")
         assert ex.finished_at is not None
+
+    def test_invalid_execution_transition_raises(self, session: Session) -> None:
+        """Verify the state machine rejects invalid transitions."""
+        import pytest as _pt
+        p = repo.create_project(session, name="invalid-trans-proj")
+        plan = repo.create_plan(
+            session, project_id=p.id, raw_command="deploy",
+            action="deploy", version=None, environments=["staging"],
+            post_steps=[], warnings=[],
+        )
+        ex = repo.create_execution(session, plan.id)
+        with _pt.raises(ValueError, match="Invalid execution transition"):
+            # queued → succeeded is not allowed (must go through running first)
+            repo.set_execution_status(session, ex, "succeeded")
+
+    def test_invalid_plan_transition_raises(self, session: Session) -> None:
+        """Verify the state machine rejects invalid plan transitions."""
+        import pytest as _pt
+        p = repo.create_project(session, name="invalid-plan-proj")
+        plan = repo.create_plan(
+            session, project_id=p.id, raw_command="deploy",
+            action="deploy", version=None, environments=["staging"],
+            post_steps=[], warnings=[],
+        )
+        with _pt.raises(ValueError, match="Invalid plan transition"):
+            # pending_approval → running is not allowed (must go through approved first)
+            repo.update_plan_status(session, plan, "running")
 
 
 # ── Deployment CRUD ───────────────────────────────────────────────────────────
@@ -203,8 +232,10 @@ class TestDeploymentCRUD:
         assert d.status == "pending"
 
     def test_get_latest_deployment(self, session: Session) -> None:
+        import time as _time
         p = repo.create_project(session, name="latest-proj")
         repo.create_deployment(session, project_id=p.id, status="running", image_tag="v1")
+        _time.sleep(0.05)  # ensure distinct created_at timestamps
         repo.create_deployment(session, project_id=p.id, status="running", image_tag="v2")
         latest = repo.get_latest_deployment(session, p.id)
         assert latest is not None
