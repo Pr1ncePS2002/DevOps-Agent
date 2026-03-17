@@ -1,20 +1,46 @@
 from __future__ import annotations
 
+import asyncio
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.common.logging import configure_logging, logger
 from app.common.settings import settings
 from app.persistence.db import init_db
+from app.services.watchdog import evaluate_deployments
+
+
+async def watchdog_loop() -> None:
+    """Periodically check all running deployments for health."""
+    while True:
+        try:
+            await run_in_threadpool(evaluate_deployments)
+        except Exception as e:
+            logger.error("watchdog_iteration_error", error=str(e))
+        await asyncio.sleep(60)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan (startup, teardown)."""
+    task = asyncio.create_task(watchdog_loop())
+    yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 
 def create_app() -> FastAPI:
     configure_logging(os.getenv("LOG_LEVEL", "INFO"))
 
-    app = FastAPI(title="AI DevOps Commander API", version="0.0.1")
+    app = FastAPI(title="AI DevOps Commander API", version="0.0.1", lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,

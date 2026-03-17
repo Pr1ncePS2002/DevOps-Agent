@@ -13,3 +13,4 @@ pytest==8.3.4
 docker==7.1.0
 cryptography==43.0.3
 python-multipart
+websockets

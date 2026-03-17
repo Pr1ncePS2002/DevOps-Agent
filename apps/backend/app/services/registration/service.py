@@ -50,7 +50,10 @@ class ProjectRegistrationService:
         if source_type == "local":
             workspace_path, name = register_local(cfg.path)  # type: ignore[union-attr]
         else:
-            workspace_path, name = register_github(cfg.repo_url)  # type: ignore[union-attr]
+            workspace_path, name = register_github(
+                cfg.repo_url,  # type: ignore[union-attr]
+                branch=getattr(cfg, "branch", None),
+            )
 
         _log.info("workspace_resolved", path=str(workspace_path), name=name)
 

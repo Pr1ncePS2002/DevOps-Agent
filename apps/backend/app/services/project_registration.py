@@ -45,7 +45,7 @@ def register_local(path_or_url: str) -> tuple[Path, str]:
     return p, p.name
 
 
-def register_github(path_or_url: str) -> tuple[Path, str]:
+def register_github(path_or_url: str, *, branch: str | None = None) -> tuple[Path, str]:
     """Clone GitHub repo into workspace. Returns (workspace_path, name)."""
     url = path_or_url.strip()
     if not is_valid_github_url(url):
@@ -58,12 +58,32 @@ def register_github(path_or_url: str) -> tuple[Path, str]:
     target = settings.workspace_root / repo_name
 
     if target.exists():
-        # Already cloned; reuse
+        # Already cloned; pull latest changes
         logger.bind(component="project-registration").info("workspace_exists", path=str(target))
+        _pull_latest(target, branch)
         return target, repo_name
 
-    clone_repo(url, target)
+    clone_repo(url, target, branch=branch)
     return target, repo_name
+
+
+def _pull_latest(target: Path, branch: str | None = None) -> None:
+    """Pull latest changes in an already-cloned repo."""
+    import subprocess
+    log = logger.bind(component="project-registration")
+    try:
+        if branch:
+            subprocess.run(
+                ["git", "checkout", branch],
+                cwd=str(target), capture_output=True, text=True, timeout=30,
+            )
+        subprocess.run(
+            ["git", "pull", "--ff-only"],
+            cwd=str(target), capture_output=True, text=True, timeout=60,
+        )
+        log.info("git_pull_success", path=str(target))
+    except Exception as exc:
+        log.warning("git_pull_failed", path=str(target), error=str(exc))
 
 
 def register_project(source_type: str, path_or_url: str) -> tuple[Path, str]:

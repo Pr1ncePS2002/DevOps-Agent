@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
+import asyncio
 
 from app.persistence.db import session_scope
 from app.persistence.repositories import (
@@ -119,3 +120,51 @@ def get_execution_endpoint(execution_id: int) -> ExecutionResponse:
             status=execution.status,
             logs=execution.logs or "",
         )
+
+
+@router.websocket("/{execution_id}/logs/stream")
+async def stream_execution_logs(websocket: WebSocket, execution_id: int):
+    """Stream live execution logs straight to the frontend without polling."""
+    await websocket.accept()
+    last_log_length = 0
+    try:
+        while True:
+            # Must run sync DB lookup in thread (or via helper), but SQLModel allows
+            # simple reads in async def if we're careful. Doing it threadpool is safer.
+            from fastapi.concurrency import run_in_threadpool
+            
+            def _get_ex() -> dict | None:
+                with session_scope() as session:
+                    ex = get_execution(session, execution_id)
+                    if not ex:
+                        return None
+                    return {"status": ex.status, "logs": ex.logs or ""}
+            
+            ex_data = await run_in_threadpool(_get_ex)
+            
+            if not ex_data:
+                await websocket.send_text("ERROR: Execution not found")
+                break
+                
+            current_logs = ex_data["logs"]
+            if len(current_logs) > last_log_length:
+                new_logs = current_logs[last_log_length:]
+                await websocket.send_text(new_logs)
+                last_log_length = len(current_logs)
+                
+            if ex_data["status"] in ("succeeded", "failed", "rolled_back"):
+                # One final read happens above, so we can break safely
+                break
+                
+            await asyncio.sleep(1.0)
+    except WebSocketDisconnect:
+        # Client gracefully closed the connection
+        pass
+    except Exception as e:
+        import logging
+        logging.error(f"WebSocket error in log streaming: {e}")
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass

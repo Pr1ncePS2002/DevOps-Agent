@@ -19,17 +19,22 @@ def is_valid_github_url(url: str) -> bool:
     return bool(GITHUB_URL_PATTERN.match(url.strip()))
 
 
-def clone_repo(url: str, target_dir: Path, timeout_seconds: int = 120) -> None:
+def clone_repo(url: str, target_dir: Path, *, branch: str | None = None, timeout_seconds: int = 120) -> None:
     """Clone a GitHub repo into target_dir. Uses whitelisted git clone only."""
     if not is_valid_github_url(url):
         raise ValueError(f"Invalid GitHub URL: {url}")
 
     target_dir.mkdir(parents=True, exist_ok=True)
     log = logger.bind(component="git-adapter")
-    log.info("git_clone_start", url=url, target=str(target_dir))
+    log.info("git_clone_start", url=url, target=str(target_dir), branch=branch)
+
+    cmd = ["git", "clone", "--depth", "1"]
+    if branch:
+        cmd.extend(["--branch", branch])
+    cmd.extend([url, str(target_dir)])
 
     result = subprocess.run(
-        ["git", "clone", "--depth", "1", url, str(target_dir)],
+        cmd,
         capture_output=True,
         text=True,
         timeout=timeout_seconds,
