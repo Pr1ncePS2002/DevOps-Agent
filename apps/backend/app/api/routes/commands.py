@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.persistence.db import session_scope
 from app.persistence.repositories import create_plan, get_project
-from app.services.command_interpreter import interpret_command
+from app.services.command_interpreter import interpret_command, build_deployment_plan
 from app.services.rag_advisor import advise_plan
 
 
@@ -49,8 +49,6 @@ def parse_command(payload: CommandParseRequest) -> PlanPreviewResponse:
             environments=parsed["environments"],
             post_steps=parsed["post_steps"],
         )
-
-        from app.services.command_interpreter import build_deployment_plan
 
         repo_path = project.workspace_path or project.repo_path or ""
         default_port = 3000 if (project.detected_stack or "node") == "node" else 8000

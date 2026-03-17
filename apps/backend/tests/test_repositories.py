@@ -1,6 +1,6 @@
 """
 Unit tests for the persistence layer: repositories and models.
-Uses an in-memory SQLite database for isolation.
+Uses an in-memory SQLite database for isolation (session fixture from conftest.py).
 """
 from __future__ import annotations
 
@@ -8,19 +8,10 @@ import json
 from datetime import datetime, timezone
 
 import pytest
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session
 
 from app.persistence.models import Deployment, Execution, Plan, Project
 from app.persistence import repositories as repo
-
-
-@pytest.fixture
-def session():
-    """Provide a clean in-memory SQLite session per test."""
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
-    SQLModel.metadata.create_all(engine)
-    with Session(engine, expire_on_commit=False) as s:
-        yield s
 
 
 # ── Project CRUD ──────────────────────────────────────────────────────────────

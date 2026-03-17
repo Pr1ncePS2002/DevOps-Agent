@@ -24,6 +24,16 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Rate-limit registration and command endpoints (30 req/min per IP)
+    from app.api.rate_limiter import RateLimitMiddleware
+
+    app.add_middleware(
+        RateLimitMiddleware,
+        max_requests=30,
+        window_seconds=60,
+        paths={"/api/projects/register", "/api/commands/parse"},
+    )
+
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok"}
