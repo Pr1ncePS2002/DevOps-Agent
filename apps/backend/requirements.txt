@@ -10,7 +10,4 @@ httpx==0.28.1
 structlog==24.4.0
 python-dotenv==1.0.1
 pytest==8.3.4
-docker==7.1.0
-cryptography==43.0.3
-python-multipart
-websockets
+anyio==4.12.0

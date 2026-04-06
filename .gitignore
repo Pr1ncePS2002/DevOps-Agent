@@ -10,10 +10,10 @@ dist/
 .next/
 .turbo/
 coverage/
-
+.planning
 # TypeScript
 *.tsbuildinfo
-
+.gemini
 # Python
 __pycache__/
 *.py[cod]

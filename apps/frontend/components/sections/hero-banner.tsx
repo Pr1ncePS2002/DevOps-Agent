@@ -1,4 +1,5 @@
 import { Sparkles } from "lucide-react";
+import { DemoButton } from "@/components/demo-button";
 
 export function HeroBanner() {
   return (
@@ -25,9 +26,10 @@ export function HeroBanner() {
             <span>Manual approval before run</span>
           </div>
         </div>
-        <div className="shrink-0 rounded-2xl border border-accent-400/20 bg-accent-500/10 px-5 py-4 text-center">
+        <div className="shrink-0 flex flex-col items-center rounded-2xl border border-accent-400/20 bg-accent-500/10 px-6 py-5 text-center">
           <p className="text-xs uppercase tracking-widest text-accent-300/60">Quick start</p>
-          <p className="mt-1 text-sm text-white/70">Use the <span className="text-accent-300 font-semibold">Launch Full Demo</span> button below</p>
+          <p className="mt-1 mb-4 text-sm text-white/70">Experience the one-click zero friction demo.</p>
+          <DemoButton compact />
         </div>
       </div>
     </section>

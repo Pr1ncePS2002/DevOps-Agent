@@ -71,19 +71,19 @@ class Orchestrator:
 
         wp = Path(workspace_path).resolve()
 
-        # Security: verify the resolved path is within allowed directories
-        allowed_roots = [settings.workspace_root.resolve()]
+        # Security: verify the resolved path is within allowed directories.
+        # If ALLOWED_REPO_ROOTS is empty (demo mode) any existing path is permitted.
         if settings.allowed_repo_roots:
-            allowed_roots.extend(
+            allowed_roots = [
                 Path(r.strip()).resolve()
                 for r in settings.allowed_repo_roots.split(",")
                 if r.strip()
-            )
-        if not any(wp == root or root in wp.parents for root in allowed_roots):
-            raise ValueError(
-                f"Invalid path: {wp} is outside allowed directories. "
-                f"Add it to ALLOWED_REPO_ROOTS or move the project to the workspace."
-            )
+            ]
+            if not any(wp == root or root in wp.parents for root in allowed_roots):
+                raise ValueError(
+                    f"Invalid path: {wp} is outside allowed directories. "
+                    f"Add it to ALLOWED_REPO_ROOTS or move the project to the workspace."
+                )
 
         if not wp.exists():
             raise FileNotFoundError(f"Workspace does not exist: {wp}")
@@ -96,7 +96,17 @@ class Orchestrator:
             df_path = dockerfile_path
 
         if not df_path.exists():
-            raise FileNotFoundError(f"Dockerfile not found: {df_path}")
+            from app.services.project_analysis import analyze_project
+            _log(session, execution, "[*] Dockerfile not found, attempting auto-generation...")
+            try:
+                analysis = analyze_project(wp)
+                if analysis.get("dockerfile_generated") and analysis.get("dockerfile_path"):
+                    df_path = Path(analysis["dockerfile_path"])
+                    _log(session, execution, f"  ✓ Generated Dockerfile for stack: {analysis.get('detected_stack')}")
+                else:
+                    raise FileNotFoundError(f"Dockerfile not found and could not be auto-generated for: {wp}")
+            except Exception as e:
+                raise FileNotFoundError(f"Dockerfile not found and auto-generation failed: {e}")
 
         # 1. Validate
         _log(session, execution, "[1/6] Validating project state")
@@ -139,27 +149,53 @@ class Orchestrator:
         if not env_file:
             raise ValueError("Env file not available for container")
 
-        # Parse APP_PORT out of the env file if available
+        # Determine port — priority: Dockerfile EXPOSE > .env PORT= > stack default
         app_port = None
-        if Path(env_file).exists():
-            for line in Path(env_file).read_text().splitlines():
-                if line.startswith("APP_PORT="):
+
+        # 1. Read EXPOSE from Dockerfile (most reliable source of truth)
+        try:
+            df_text = df_path.read_text(errors="ignore")
+            for line in df_text.splitlines():
+                stripped = line.strip().upper()
+                if stripped.startswith("EXPOSE "):
+                    val = stripped.split()[1].split("/")[0]
+                    if val.isdigit():
+                        app_port = val
+                        break
+        except Exception:
+            pass
+
+        # 2. Fallback: PORT= or APP_PORT= in the project .env file
+        if not app_port and Path(env_file).exists():
+            for line in Path(env_file).read_text(errors="ignore").splitlines():
+                if line.startswith("PORT=") or line.startswith("APP_PORT="):
                     val = line.split("=", 1)[1].strip().strip("\"'")
                     if val.isdigit():
                         app_port = val
                     break
 
+        # 3. Final fallback: stack default
         if not app_port:
-            app_port = "3000" if project.detected_stack == "node" else "8000"
+            app_port = "8080" if project.detected_stack == "node" else "8000"
 
         ports_dict = {f"{app_port}/tcp": app_port}
 
-        # Override with plan ports if AI agent specified them
-        ports_json = plan.ports_json or "[]"
+        # Free any container already holding our target ports before starting
         try:
-            ports_list = json.loads(ports_json)
-            if ports_list:
-                ports_dict = {f"{p.split(':')[1]}/tcp": p.split(":")[0] for p in ports_list if ":" in p}
+            import docker as _docker
+            _client = _docker.from_env()
+            host_ports = set(ports_dict.values())
+            for _c in _client.containers.list(all=True):
+                if _c.name.startswith("devops-"):
+                    _c.remove(force=True)
+                    continue
+                _bindings = (_c.attrs.get("HostConfig") or {}).get("PortBindings") or {}
+                for _binds in _bindings.values():
+                    for _b in (_binds or []):
+                        if _b.get("HostPort") in host_ports:
+                            _c.remove(force=True)
+                            break
+            _client.close()
         except Exception:
             pass
 

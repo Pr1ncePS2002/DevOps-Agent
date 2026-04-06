@@ -23,19 +23,21 @@ log = logger.bind(component="demo")
 
 
 def _demo_app_dir() -> Path:
-    """Resolve demo app directory -- lives under settings.data_dir/demo-apps/."""
-    return settings.data_dir.resolve() / "demo-apps" / "hello-node"
+    """Resolve demo app directory (the apps/demo-app created in Milestone 1)."""
+    return settings.workspace_root.resolve() / "apps" / "demo-app"
 
 
 def _cleanup_demo_containers() -> None:
-    """Remove old demo containers to free port 4000."""
+    """Remove all devops-* containers and anything holding port 8080."""
     try:
         import docker
         client = docker.from_env()
         for c in client.containers.list(all=True):
             tags = c.image.tags if c.image.tags else []
-            is_demo = any("devops-demo" in t for t in tags)
-            if is_demo or (c.name.startswith("devops-") and _container_uses_port(c, "4000")):
+            is_devops = c.name.startswith("devops-")
+            is_demo_tag = any("devops-demo" in t for t in tags)
+            holds_port = _container_uses_port(c, "8080")
+            if is_devops or is_demo_tag or holds_port:
                 c.remove(force=True)
                 log.info("demo_cleanup", container=c.name)
         client.close()
@@ -162,14 +164,17 @@ def setup_demo_project() -> DemoProjectResponse:
     )
 
 
+class DemoRunRequest(BaseModel):
+    command: str
+
 @router.post("/run-full", response_model=DemoFullResponse)
-def run_full_demo() -> DemoFullResponse:
+def run_full_demo(payload: DemoRunRequest) -> DemoFullResponse:
     """
-    One-click full pipeline: register, .env, plan, approve, enqueue execution.
+    One-click full pipeline: register, .env, plan, approve, run execution inline.
     The frontend polls /executions/{id} to stream logs in real time.
     """
+    import threading
     from app.persistence.repositories import create_execution, update_plan_status
-    from app.queue.queue import get_queue
 
     demo_dir = _demo_app_dir()
     if not demo_dir.exists():
@@ -209,7 +214,7 @@ def run_full_demo() -> DemoFullResponse:
             plan = create_plan(
                 session,
                 project_id=project_id,
-                raw_command="Deploy demo app to Docker (auto-generated)",
+                raw_command=payload.command,
                 action="deploy",
                 version=None,
                 environments=["production"],
@@ -218,7 +223,7 @@ def run_full_demo() -> DemoFullResponse:
                 detected_stack=detected_stack,
                 dockerfile_path=dockerfile_path,
                 image_tag=f"devops-demo-{project_id}:latest",
-                ports=["4000:4000"],
+                ports=["8080:8080"],
                 env_injected=True,
             )
             plan_id: int = plan.id or 0
@@ -227,15 +232,11 @@ def run_full_demo() -> DemoFullResponse:
             execution = create_execution(session, plan_id)
             execution_id: int = execution.id or 0
 
-            try:
-                queue = get_queue()
-                job = queue.enqueue("app.queue.tasks.execute_plan", execution_id)
-                job_id = job.id
-            except Exception as exc:
-                from app.persistence.repositories import set_execution_status, append_execution_log
-                set_execution_status(session, execution, "failed")
-                append_execution_log(session, execution, f"ERROR: Failed to enqueue: {exc}")
-                raise HTTPException(status_code=503, detail="Queue unavailable") from exc
+        # Run inline in background thread — no worker needed, logs stream immediately
+        from app.queue.tasks import execute_plan
+        thread = threading.Thread(target=execute_plan, args=(execution_id,), daemon=True)
+        thread.start()
+        job_id = f"inline-{execution_id}"
 
         log.info("demo_full_run", project_id=project_id, execution_id=execution_id, job_id=job_id)
 

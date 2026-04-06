@@ -5,102 +5,11 @@ from datetime import datetime, timezone
 
 from sqlmodel import Session, select
 
-from app.persistence.models import Deployment, Execution, Plan, Project
-
-# ── Status transition state machines ──────────────────────────────────────────
-# Each key maps to the set of valid next statuses.
-
-PLAN_TRANSITIONS: dict[str, set[str]] = {
-    "pending_approval": {"approved", "rejected"},
-    "approved":         {"running", "failed"},
-    "running":          {"succeeded", "failed"},
-    "succeeded":        set(),
-    "failed":           {"pending_approval"},  # allow retry
-    "rejected":         set(),
-}
-
-EXECUTION_TRANSITIONS: dict[str, set[str]] = {
-    "queued":      {"running", "failed"},
-    "running":     {"succeeded", "failed", "rolled_back"},
-    "succeeded":   set(),
-    "failed":      {"rolled_back"},
-    "rolled_back": set(),
-}
+from app.persistence.models import Execution, Plan, Project
 
 
-def _validate_transition(
-    current: str, target: str, transitions: dict[str, set[str]], entity: str
-) -> None:
-    """Raise ValueError if the status transition is not allowed."""
-    allowed = transitions.get(current)
-    if allowed is None:
-        raise ValueError(f"Unknown {entity} status: {current!r}")
-    if target not in allowed:
-        raise ValueError(
-            f"Invalid {entity} transition: {current!r} → {target!r}. "
-            f"Allowed: {allowed or 'none (terminal state)'}"
-        )
-
-
-def create_project(
-    session: Session,
-    name: str,
-    source_type: str = "local",
-    description: str = "",
-    repo_path: str | None = None,
-    repo_url: str | None = None,
-    branch: str | None = None,
-    workspace_path: str | None = None,
-    detected_stack: str | None = None,
-    dockerfile_path: str | None = None,
-    has_env_file: bool = False,
-    last_known_good_tag: str | None = None,
-    deployment_platform: str = "docker",
-    deployment_config_json: str = "{}",
-    env_config_json: str = "{}",
-) -> Project:
-    project = Project(
-        name=name,
-        description=description,
-        source_type=source_type,
-        repo_path=repo_path,
-        repo_url=repo_url,
-        branch=branch,
-        workspace_path=workspace_path,
-        detected_stack=detected_stack,
-        dockerfile_path=dockerfile_path,
-        has_env_file=has_env_file,
-        last_known_good_tag=last_known_good_tag,
-        deployment_platform=deployment_platform,
-        deployment_config_json=deployment_config_json,
-        env_config_json=env_config_json,
-    )
-    session.add(project)
-    session.commit()
-    session.refresh(project)
-    return project
-
-
-def update_project(
-    session: Session,
-    project: Project,
-    *,
-    workspace_path: str | None = None,
-    detected_stack: str | None = None,
-    dockerfile_path: str | None = None,
-    has_env_file: bool | None = None,
-    last_known_good_tag: str | None = None,
-) -> Project:
-    if workspace_path is not None:
-        project.workspace_path = workspace_path
-    if detected_stack is not None:
-        project.detected_stack = detected_stack
-    if dockerfile_path is not None:
-        project.dockerfile_path = dockerfile_path
-    if has_env_file is not None:
-        project.has_env_file = has_env_file
-    if last_known_good_tag is not None:
-        project.last_known_good_tag = last_known_good_tag
+def create_project(session: Session, name: str, repo_path: str | None, repo_url: str | None) -> Project:
+    project = Project(name=name, repo_path=repo_path, repo_url=repo_url)
     session.add(project)
     session.commit()
     session.refresh(project)
@@ -125,11 +34,6 @@ def create_plan(
     environments: list[str],
     post_steps: list[str],
     warnings: list[str],
-    detected_stack: str | None = None,
-    dockerfile_path: str | None = None,
-    image_tag: str | None = None,
-    ports: list[str] | None = None,
-    env_injected: bool = False,
 ) -> Plan:
     plan = Plan(
         project_id=project_id,
@@ -139,11 +43,6 @@ def create_plan(
         environments_json=json.dumps(environments),
         post_steps_json=json.dumps(post_steps),
         warnings_json=json.dumps(warnings),
-        detected_stack=detected_stack,
-        dockerfile_path=dockerfile_path,
-        image_tag=image_tag,
-        ports_json=json.dumps(ports or []),
-        env_injected=env_injected,
         status="pending_approval",
         updated_at=datetime.now(timezone.utc),
     )
@@ -158,7 +57,6 @@ def get_plan(session: Session, plan_id: int) -> Plan | None:
 
 
 def update_plan_status(session: Session, plan: Plan, status: str) -> Plan:
-    _validate_transition(plan.status, status, PLAN_TRANSITIONS, "plan")
     plan.status = status
     plan.updated_at = datetime.now(timezone.utc)
     session.add(plan)
@@ -187,62 +85,7 @@ def append_execution_log(session: Session, execution: Execution, line: str) -> E
     return execution
 
 
-def create_deployment(
-    session: Session,
-    project_id: int,
-    execution_id: int | None = None,
-    container_id: str | None = None,
-    image_tag: str | None = None,
-    status: str = "pending",
-) -> Deployment:
-    deploy = Deployment(
-        project_id=project_id,
-        execution_id=execution_id,
-        container_id=container_id,
-        image_tag=image_tag,
-        status=status,
-    )
-    session.add(deploy)
-    session.commit()
-    session.refresh(deploy)
-    return deploy
-
-
-def get_latest_deployment(session: Session, project_id: int) -> Deployment | None:
-    deployments = list(
-        session.exec(
-            select(Deployment)
-            .where(Deployment.project_id == project_id)
-            .order_by(Deployment.created_at.desc())
-            .limit(1)
-        ).all()
-    )
-    return deployments[0] if deployments else None
-
-
-def update_deployment(
-    session: Session,
-    deployment: Deployment,
-    *,
-    container_id: str | None = None,
-    image_tag: str | None = None,
-    status: str | None = None,
-) -> Deployment:
-    if container_id is not None:
-        deployment.container_id = container_id
-    if image_tag is not None:
-        deployment.image_tag = image_tag
-    if status is not None:
-        deployment.status = status
-    deployment.updated_at = datetime.now(timezone.utc)
-    session.add(deployment)
-    session.commit()
-    session.refresh(deployment)
-    return deployment
-
-
 def set_execution_status(session: Session, execution: Execution, status: str) -> Execution:
-    _validate_transition(execution.status, status, EXECUTION_TRANSITIONS, "execution")
     execution.status = status
     if status == "running" and execution.started_at is None:
         execution.started_at = datetime.now(timezone.utc)

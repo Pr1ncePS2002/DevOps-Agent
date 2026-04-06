@@ -25,9 +25,24 @@ async def watchdog_loop() -> None:
         await asyncio.sleep(60)
 
 
+def _cleanup_stale_containers() -> None:
+    """Remove all devops-* containers left over from previous runs."""
+    try:
+        import docker
+        client = docker.from_env()
+        for c in client.containers.list(all=True):
+            if c.name.startswith("devops-"):
+                c.remove(force=True)
+                logger.info("startup_cleanup", container=c.name)
+        client.close()
+    except Exception:
+        pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan (startup, teardown)."""
+    await run_in_threadpool(_cleanup_stale_containers)
     task = asyncio.create_task(watchdog_loop())
     yield
     task.cancel()

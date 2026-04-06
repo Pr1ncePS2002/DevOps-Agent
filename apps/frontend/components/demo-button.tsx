@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, Play, Sparkles } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { API_BASE_URL } from "@/lib/config";
 
 interface DemoPreset {
@@ -46,7 +45,16 @@ export function DemoButton({ onDemoStarted, compact }: Props) {
     setResult(null);
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/demo/run-full`, { method: "POST" });
+      const payload = {
+        command: "Register the built-in demo app and deploy it locally on port 8080."
+      };
+      const res = await fetch(`${API_BASE_URL}/demo/run-full`, { 
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
       if (!res.ok) {
         const detail = await res.text();
         throw new Error(detail || res.statusText);
@@ -72,7 +80,7 @@ export function DemoButton({ onDemoStarted, compact }: Props) {
         className="inline-flex items-center gap-1.5 rounded-xl border border-accent-400/30 bg-accent-500/10 px-3 py-2 text-xs font-semibold text-accent-300 transition hover:bg-accent-500/20 disabled:opacity-50"
       >
         {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-        Try Sample App
+        Launch Full Demo
       </button>
     );
   }

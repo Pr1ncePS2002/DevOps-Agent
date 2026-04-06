@@ -103,7 +103,8 @@ def build_image(
         for chunk in stream:
             if isinstance(chunk, dict):
                 if "stream" in chunk and chunk["stream"]:
-                    line = chunk["stream"].rstrip()
+                    raw_line = chunk["stream"].rstrip()
+                    line = raw_line.encode("ascii", errors="replace").decode("ascii")
                     if line and log_callback:
                         log_callback(line)
                     log.debug("docker_build", line=line[:200])

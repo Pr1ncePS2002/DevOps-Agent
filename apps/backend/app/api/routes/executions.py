@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 import asyncio
@@ -13,7 +15,6 @@ from app.persistence.repositories import (
     set_execution_status,
     update_plan_status,
 )
-from app.queue.queue import get_queue
 
 
 router = APIRouter()
@@ -43,16 +44,15 @@ def approve_plan(plan_id: int) -> ApproveResponse:
 
         update_plan_status(session, plan, "approved")
         execution = create_execution(session, plan_id)
+        execution_id = execution.id or 0
 
-        try:
-            queue = get_queue()
-            job = queue.enqueue("app.queue.tasks.execute_plan", execution.id)
-        except Exception as exc:
-            set_execution_status(session, execution, "failed")
-            append_execution_log(session, execution, f"ERROR: Failed to enqueue job: {exc}")
-            raise HTTPException(status_code=503, detail="Queue unavailable; execution marked failed.") from exc
+    # Run the orchestrator in a background thread so logs stream immediately
+    # without requiring a separate RQ worker process.
+    from app.queue.tasks import execute_plan
+    thread = threading.Thread(target=execute_plan, args=(execution_id,), daemon=True)
+    thread.start()
 
-    return ApproveResponse(execution_id=execution.id or 0, rq_job_id=job.id)
+    return ApproveResponse(execution_id=execution_id, rq_job_id=f"inline-{execution_id}")
 
 
 @router.post("/{execution_id}/rollback")
