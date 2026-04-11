@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.persistence.db import session_scope
 from app.persistence.repositories import create_plan, get_project
-from app.services.command_interpreter import interpret_command, build_deployment_plan
+from app.services.command_interpreter import interpret_command_async, build_deployment_plan
 from app.services.rag_advisor import advise_plan
 
 
@@ -34,20 +34,31 @@ class PlanPreviewResponse(BaseModel):
     image_tag: str | None
     ports: list[str]
     env_injected: bool
+    # AI interpretation metadata (Task 1.2)
+    confidence: float = 1.0
+    reasoning: str = ""
+    suggested_confirmation: str = ""
+    interpretation_method: str = "deterministic"
+    # AI risk assessment metadata (Task 1.3)
+    risk_level: str = "low"
+    risk_score: int = 0
+    recommendations: list[str] = []
 
 
 @router.post("/parse", response_model=PlanPreviewResponse)
-def parse_command(payload: CommandParseRequest) -> PlanPreviewResponse:
+async def parse_command(payload: CommandParseRequest) -> PlanPreviewResponse:
     with session_scope() as session:
         project = get_project(session, payload.project_id)
         if project is None:
             raise HTTPException(status_code=404, detail="Project not found")
 
-        parsed = interpret_command(payload.text)
-        rag_warnings = advise_plan(
+        parsed = await interpret_command_async(payload.text)
+        advisory = await advise_plan(
             action=parsed["action"],
             environments=parsed["environments"],
             post_steps=parsed["post_steps"],
+            version=parsed.get("version"),
+            project_name=project.name,
         )
 
         repo_path = project.workspace_path or project.repo_path or ""
@@ -61,7 +72,7 @@ def parse_command(payload: CommandParseRequest) -> PlanPreviewResponse:
             default_port=default_port,
             parsed=parsed,
         )
-        warnings = dp["warnings"] + rag_warnings
+        warnings = dp["warnings"] + advisory["warnings"]
 
         plan = create_plan(
             session,
@@ -94,4 +105,11 @@ def parse_command(payload: CommandParseRequest) -> PlanPreviewResponse:
             image_tag=dp["image_tag"],
             ports=json.loads(plan.ports_json),
             env_injected=dp["env_injected"],
+            confidence=parsed.get("confidence", 1.0),
+            reasoning=parsed.get("reasoning", ""),
+            suggested_confirmation=parsed.get("suggested_confirmation", ""),
+            interpretation_method=parsed.get("interpretation_method", "deterministic"),
+            risk_level=advisory["risk_level"],
+            risk_score=advisory["risk_score"],
+            recommendations=advisory["recommendations"],
         )

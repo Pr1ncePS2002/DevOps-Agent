@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
 
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-1.5-pro"
+    gemini_model: str = "gemini-2.0-flash"
 
     ollama_base_url: AnyUrl = "http://localhost:11434"
     ollama_model: str = "llama3.1:8b"
@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     # Safety
     dry_run: bool = True
     enable_local_execution: bool = False
+    allowed_repo_roots: str = ""  # comma-separated; empty = allow any (demo mode)
+    workspace_root: Path = Path("./data/workspaces")
+    encryption_key: str | None = None  # Fernet key; if unset, .env files stored plaintext
 
 
 settings = Settings()  # singleton

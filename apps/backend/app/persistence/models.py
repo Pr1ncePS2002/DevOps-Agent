@@ -13,8 +13,19 @@ def _utc_now() -> datetime:
 class Project(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
+    description: str = ""
+    source_type: str = "local"
     repo_path: Optional[str] = None
     repo_url: Optional[str] = None
+    branch: Optional[str] = None
+    workspace_path: Optional[str] = None
+    detected_stack: Optional[str] = None
+    dockerfile_path: Optional[str] = None
+    has_env_file: bool = False
+    last_known_good_tag: Optional[str] = None
+    deployment_platform: str = "docker"
+    deployment_config_json: str = "{}"
+    env_config_json: str = "{}"
     created_at: datetime = Field(default_factory=_utc_now)
 
 
@@ -28,6 +39,12 @@ class Plan(SQLModel, table=True):
     post_steps_json: str
     warnings_json: str = "[]"
     status: str = "pending_approval"  # pending_approval|approved|running|failed|rolled_back|succeeded
+    # Deployment details
+    detected_stack: Optional[str] = None
+    dockerfile_path: Optional[str] = None
+    image_tag: Optional[str] = None
+    ports_json: str = "[]"
+    env_injected: bool = False
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)
 
@@ -39,4 +56,14 @@ class Execution(SQLModel, table=True):
     logs: str = ""
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=_utc_now)
+
+
+class Deployment(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(index=True)
+    execution_id: Optional[int] = Field(default=None, index=True)
+    container_id: Optional[str] = None
+    image_tag: Optional[str] = None
+    status: str = "running"  # running|stopped|failed|rolled_back
     created_at: datetime = Field(default_factory=_utc_now)

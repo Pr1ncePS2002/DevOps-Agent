@@ -8,11 +8,11 @@ from app.common.settings import settings
 
 
 def _get_fernet():
-    from cryptography.fernet import Fernet
     key = settings.encryption_key
     if not key:
         return None
     try:
+        from cryptography.fernet import Fernet
         return Fernet(key.encode() if isinstance(key, str) else key)
     except Exception:
         return None

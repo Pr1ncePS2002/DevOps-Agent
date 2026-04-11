@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
-import { Check, Loader2, Send } from "lucide-react";
+import { Check, Loader2, Send, Sparkles } from "lucide-react";
 
 import { approvePlan, fetchExecution, parseCommand } from "@/lib/api";
 import { POLL_INTERVAL_MS } from "@/lib/config";
@@ -139,18 +139,39 @@ export function CommandConsole({ projects }: CommandConsoleProps) {
           </button>
         </div>
         {error ? <p className="mt-3 text-sm text-red-300">{error}</p> : null}
+        <p className="mt-4 flex items-center gap-1.5 text-xs text-white/25">
+          <Sparkles className="h-3 w-3" />
+          Powered by Gemini 2.0 Flash
+        </p>
       </div>
 
       <div className="rounded-3xl border border-white/5 bg-surface-800/80 p-6 shadow-card">
         <p className="text-xs uppercase tracking-[0.3em] text-white/60">Preview</p>
         {planPreview ? (
           <div className="mt-4 space-y-4">
-            <div>
-              <p className="text-2xl font-display font-semibold text-white">{planPreview.action}</p>
-              <p className="text-sm text-white/70">
-                Version target: {planPreview.version || "Not specified"}
-              </p>
+            {/* Action title + confidence badge */}
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-2xl font-display font-semibold capitalize text-white">
+                  {planPreview.action}
+                </p>
+                <p className="text-sm text-white/70">
+                  Version target: {planPreview.version || "Not specified"}
+                </p>
+              </div>
+              {planPreview.confidence !== undefined && (
+                <ConfidenceBadge confidence={planPreview.confidence} />
+              )}
             </div>
+
+            {/* AI reasoning */}
+            {planPreview.reasoning ? (
+              <p className="text-sm italic text-white/60">
+                AI understood: {planPreview.reasoning}
+              </p>
+            ) : null}
+
+            {/* Environments + Post Steps */}
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-2xl border border-white/5 bg-black/30 p-4">
                 <p className="text-xs uppercase tracking-[0.25em] text-white/60">Environments</p>
@@ -163,12 +184,23 @@ export function CommandConsole({ projects }: CommandConsoleProps) {
               <div className="rounded-2xl border border-white/5 bg-black/30 p-4">
                 <p className="text-xs uppercase tracking-[0.25em] text-white/60">Post Steps</p>
                 <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-white/80">
-                  {planPreview.post_steps.map((step, idx) => (
-                    <li key={`${step}-${idx}`}>{step}</li>
-                  ))}
+                  {planPreview.post_steps.length > 0 ? (
+                    planPreview.post_steps.map((step, idx) => (
+                      <li key={`${step}-${idx}`}>{step.replace(/_/g, " ")}</li>
+                    ))
+                  ) : (
+                    <li className="text-white/40">None</li>
+                  )}
                 </ul>
               </div>
             </div>
+
+            {/* Risk score bar */}
+            {planPreview.risk_score !== undefined && planPreview.risk_level ? (
+              <RiskBar score={planPreview.risk_score} level={planPreview.risk_level} />
+            ) : null}
+
+            {/* Policy warnings */}
             {planPreview.warnings.length > 0 ? (
               <div className="rounded-2xl border border-yellow-500/40 bg-yellow-500/5 p-4 text-sm text-yellow-100">
                 <p className="text-xs uppercase tracking-[0.3em] text-yellow-300">Policy Warnings</p>
@@ -179,6 +211,67 @@ export function CommandConsole({ projects }: CommandConsoleProps) {
                 </ul>
               </div>
             ) : null}
+
+            {/* Recommendations */}
+            {planPreview.recommendations && planPreview.recommendations.length > 0 ? (
+              <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm text-emerald-100">
+                <p className="text-xs uppercase tracking-[0.3em] text-emerald-400">Recommendations</p>
+                <ul className="mt-2 list-disc space-y-1 pl-4">
+                  {planPreview.recommendations.map((rec, idx) => (
+                    <li key={`${rec}-${idx}`}>{rec}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {/* Deployment details */}
+            {(planPreview.detected_stack || planPreview.image_tag || planPreview.dockerfile_path || (planPreview.ports && planPreview.ports.length > 0)) ? (
+              <div className="rounded-2xl border border-white/5 bg-black/30 p-4 text-sm">
+                <p className="text-xs uppercase tracking-[0.25em] text-white/60">Deployment Details</p>
+                <dl className="mt-2 space-y-1.5">
+                  {planPreview.detected_stack && (
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-white/50">Stack</dt>
+                      <dd className="font-mono text-white/90">{planPreview.detected_stack}</dd>
+                    </div>
+                  )}
+                  {planPreview.image_tag && (
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-white/50">Image</dt>
+                      <dd className="font-mono text-white/90">{planPreview.image_tag}</dd>
+                    </div>
+                  )}
+                  {planPreview.dockerfile_path && (
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-white/50">Dockerfile</dt>
+                      <dd className="truncate font-mono text-white/90">{planPreview.dockerfile_path}</dd>
+                    </div>
+                  )}
+                  {planPreview.ports && planPreview.ports.length > 0 && (
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-white/50">Ports</dt>
+                      <dd className="font-mono text-white/90">{planPreview.ports.join(", ")}</dd>
+                    </div>
+                  )}
+                  {planPreview.env_injected !== undefined && (
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-white/50">Env vars</dt>
+                      <dd className={planPreview.env_injected ? "text-emerald-300" : "text-white/40"}>
+                        {planPreview.env_injected ? "Injected" : "None"}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              </div>
+            ) : null}
+
+            {/* Suggested confirmation above approve */}
+            {planPreview.suggested_confirmation ? (
+              <p className="text-center text-xs text-white/50">
+                {planPreview.suggested_confirmation}
+              </p>
+            ) : null}
+
             <button
               type="button"
               onClick={handleApprove}
@@ -200,6 +293,56 @@ export function CommandConsole({ projects }: CommandConsoleProps) {
 
       <div className="lg:col-span-2">
         <LiveLog lines={logLines} title={execution ? `Execution #${execution.id} (${execution.status})` : undefined} />
+      </div>
+    </div>
+  );
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function ConfidenceBadge({ confidence }: { confidence: number }) {
+  const pct = Math.round(confidence * 100);
+  const color =
+    pct > 80
+      ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-300"
+      : pct >= 50
+        ? "border-yellow-400/50 bg-yellow-500/15 text-yellow-200"
+        : "border-red-400/40 bg-red-500/10 text-red-300";
+
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-xs font-medium",
+        color
+      )}
+    >
+      AI {pct}% confident
+    </span>
+  );
+}
+
+const RISK_CONFIG = {
+  low: { bar: "bg-emerald-500", text: "text-emerald-300", label: "LOW" },
+  medium: { bar: "bg-yellow-500", text: "text-yellow-300", label: "MEDIUM" },
+  high: { bar: "bg-orange-500", text: "text-orange-300", label: "HIGH" },
+  critical: { bar: "bg-red-500", text: "text-red-400", label: "CRITICAL" },
+} as const;
+
+function RiskBar({ score, level }: { score: number; level: "low" | "medium" | "high" | "critical" }) {
+  const cfg = RISK_CONFIG[level] ?? RISK_CONFIG.low;
+  return (
+    <div className="rounded-2xl border border-white/5 bg-black/30 p-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs uppercase tracking-[0.25em] text-white/60">Risk Assessment</p>
+        <span className={cn("text-xs font-semibold uppercase", cfg.text)}>
+          {cfg.label} — {score}/100
+        </span>
+      </div>
+      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+        <div
+          className={cn("h-full rounded-full transition-all duration-500", cfg.bar)}
+          style={{ width: `${score}%` }}
+        />
       </div>
     </div>
   );

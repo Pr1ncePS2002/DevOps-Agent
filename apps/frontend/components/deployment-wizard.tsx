@@ -322,26 +322,147 @@ export function DeploymentWizard() {
         <div className="rounded-3xl border border-white/5 bg-surface-800/70 p-6 shadow-card">
           <h3 className="text-lg font-semibold text-white">Deploy</h3>
           <div className="mt-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-white/80">{planPreview.action}</span>
-              <StatusPill status={planPreview.status} />
+            {/* Action + confidence + status */}
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-2xl font-semibold capitalize text-white">{planPreview.action}</p>
+                <p className="text-sm text-white/60">
+                  Version: {planPreview.version ?? "Not specified"}
+                </p>
+              </div>
+              <div className="flex flex-col items-end gap-2">
+                <StatusPill status={planPreview.status} />
+                {planPreview.confidence !== undefined && (
+                  <span className={cn(
+                    "rounded-full border px-2.5 py-1 text-xs font-medium",
+                    planPreview.confidence > 0.8
+                      ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-300"
+                      : "border-yellow-400/50 bg-yellow-500/15 text-yellow-200"
+                  )}>
+                    AI {Math.round(planPreview.confidence * 100)}% confident
+                  </span>
+                )}
+              </div>
             </div>
-            <p className="text-sm text-white/60">
-              Stack: {planPreview.detected_stack} | Dockerfile: {planPreview.dockerfile_path ?? "generated"}
-            </p>
-            {planPreview.warnings.length > 0 && (
-              <ul className="list-disc space-y-1 rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4 text-sm text-yellow-200">
-                {planPreview.warnings.map((w, i) => (
-                  <li key={i}>{w}</li>
-                ))}
-              </ul>
+
+            {/* AI reasoning */}
+            {planPreview.reasoning && (
+              <p className="text-sm italic text-white/50">AI understood: {planPreview.reasoning}</p>
             )}
+
+            {/* Environments + Post steps */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-white/5 bg-black/30 p-4">
+                <p className="text-xs uppercase tracking-widest text-white/50">Environments</p>
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-white/90">
+                  {planPreview.environments.map((env) => <li key={env}>{env}</li>)}
+                </ul>
+              </div>
+              <div className="rounded-2xl border border-white/5 bg-black/30 p-4">
+                <p className="text-xs uppercase tracking-widest text-white/50">Post Steps</p>
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-white/80">
+                  {planPreview.post_steps.length > 0
+                    ? planPreview.post_steps.map((s, i) => <li key={i}>{s.replace(/_/g, " ")}</li>)
+                    : <li className="text-white/40">None</li>}
+                </ul>
+              </div>
+            </div>
+
+            {/* Deployment details */}
+            <div className="rounded-2xl border border-white/5 bg-black/30 p-4 text-sm">
+              <p className="text-xs uppercase tracking-widest text-white/50">Deployment Details</p>
+              <dl className="mt-2 space-y-1.5">
+                {planPreview.detected_stack && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-white/50">Stack</dt>
+                    <dd className="font-mono text-white/90">{planPreview.detected_stack}</dd>
+                  </div>
+                )}
+                {planPreview.image_tag && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-white/50">Image</dt>
+                    <dd className="font-mono text-white/90">{planPreview.image_tag}</dd>
+                  </div>
+                )}
+                {planPreview.dockerfile_path && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-white/50">Dockerfile</dt>
+                    <dd className="truncate font-mono text-white/90">{planPreview.dockerfile_path}</dd>
+                  </div>
+                )}
+                {planPreview.ports && planPreview.ports.length > 0 && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-white/50">Ports</dt>
+                    <dd className="font-mono text-white/90">{planPreview.ports.join(", ")}</dd>
+                  </div>
+                )}
+                <div className="flex justify-between gap-2">
+                  <dt className="text-white/50">Env vars</dt>
+                  <dd className={planPreview.env_injected ? "text-emerald-300" : "text-white/40"}>
+                    {planPreview.env_injected ? "Injected" : "None"}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            {/* Risk bar */}
+            {planPreview.risk_score !== undefined && planPreview.risk_level && (
+              <div className="rounded-2xl border border-white/5 bg-black/30 p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs uppercase tracking-widest text-white/50">Risk Assessment</p>
+                  <span className={cn("text-xs font-semibold uppercase", {
+                    "text-emerald-300": planPreview.risk_level === "low",
+                    "text-yellow-300": planPreview.risk_level === "medium",
+                    "text-orange-300": planPreview.risk_level === "high",
+                    "text-red-400": planPreview.risk_level === "critical",
+                  })}>
+                    {planPreview.risk_level.toUpperCase()} — {planPreview.risk_score}/100
+                  </span>
+                </div>
+                <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className={cn("h-full rounded-full transition-all duration-500", {
+                      "bg-emerald-500": planPreview.risk_level === "low",
+                      "bg-yellow-500": planPreview.risk_level === "medium",
+                      "bg-orange-500": planPreview.risk_level === "high",
+                      "bg-red-500": planPreview.risk_level === "critical",
+                    })}
+                    style={{ width: `${planPreview.risk_score}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Warnings */}
+            {planPreview.warnings.length > 0 && (
+              <div className="rounded-2xl border border-yellow-500/40 bg-yellow-500/5 p-4">
+                <p className="text-xs uppercase tracking-widest text-yellow-300">Policy Warnings</p>
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-yellow-100">
+                  {planPreview.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                </ul>
+              </div>
+            )}
+
+            {/* Recommendations */}
+            {planPreview.recommendations && planPreview.recommendations.length > 0 && (
+              <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+                <p className="text-xs uppercase tracking-widest text-emerald-400">Recommendations</p>
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-emerald-100">
+                  {planPreview.recommendations.map((r, i) => <li key={i}>{r}</li>)}
+                </ul>
+              </div>
+            )}
+
+            {planPreview.suggested_confirmation && (
+              <p className="text-center text-xs text-white/40">{planPreview.suggested_confirmation}</p>
+            )}
+
             <button
               type="button"
               onClick={handleApprove}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-accent-400/50 bg-accent-500/20 px-4 py-3 text-sm font-semibold text-accent-300"
+              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-accent-400/50 bg-accent-500/20 px-4 py-3 text-sm font-semibold text-accent-300 transition hover:bg-accent-500/30"
             >
-              Approve & Execute
+              <Check className="h-4 w-4" /> Approve & Execute
             </button>
           </div>
         </div>

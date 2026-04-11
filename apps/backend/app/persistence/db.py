@@ -53,10 +53,37 @@ def _migrate_project_table() -> None:
                 logger.warning("migration_failed", column=col, error=str(exc))
 
 
+def _migrate_plan_table() -> None:
+    """Add new deployment columns to plan table for existing DBs."""
+    if not db_url.startswith("sqlite"):
+        return
+    from sqlalchemy import text
+
+    columns_to_add = [
+        ("detected_stack", "TEXT"),
+        ("dockerfile_path", "TEXT"),
+        ("image_tag", "TEXT"),
+        ("ports_json", "TEXT NOT NULL DEFAULT '[]'"),
+        ("env_injected", "INTEGER NOT NULL DEFAULT 0"),
+    ]
+    with engine.connect() as conn:
+        for col, spec in columns_to_add:
+            try:
+                conn.execute(text(f"ALTER TABLE plan ADD COLUMN {col} {spec}"))
+                conn.commit()
+            except sqlite3.OperationalError:
+                conn.rollback()
+            except Exception as exc:
+                conn.rollback()
+                logger.warning("migration_failed", column=col, error=str(exc))
+
+
 def init_db() -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     SQLModel.metadata.create_all(engine)
     _migrate_project_table()
+    _migrate_plan_table()
+    # Deployment table is created fresh by create_all if it doesn't exist
 
 
 @contextmanager

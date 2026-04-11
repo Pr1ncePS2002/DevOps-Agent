@@ -75,6 +75,15 @@ export interface PlanPreview {
   image_tag?: string | null;
   ports?: string[];
   env_injected?: boolean;
+  // AI interpretation metadata (Task 1.2)
+  confidence?: number;
+  reasoning?: string;
+  suggested_confirmation?: string;
+  interpretation_method?: string;
+  // AI risk assessment metadata (Task 1.3)
+  risk_level?: "low" | "medium" | "high" | "critical";
+  risk_score?: number;
+  recommendations?: string[];
 }
 
 export interface ExecutionDetail {

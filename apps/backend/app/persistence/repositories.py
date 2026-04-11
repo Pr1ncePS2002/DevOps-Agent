@@ -5,11 +5,50 @@ from datetime import datetime, timezone
 
 from sqlmodel import Session, select
 
-from app.persistence.models import Execution, Plan, Project
+from app.persistence.models import Deployment, Execution, Plan, Project
 
 
-def create_project(session: Session, name: str, repo_path: str | None, repo_url: str | None) -> Project:
-    project = Project(name=name, repo_path=repo_path, repo_url=repo_url)
+def create_project(
+    session: Session,
+    name: str,
+    repo_path: str | None = None,
+    repo_url: str | None = None,
+    *,
+    description: str = "",
+    source_type: str = "local",
+    branch: str | None = None,
+    workspace_path: str | None = None,
+    detected_stack: str | None = None,
+    dockerfile_path: str | None = None,
+    has_env_file: bool = False,
+    deployment_platform: str = "docker",
+    deployment_config_json: str = "{}",
+    env_config_json: str = "{}",
+) -> Project:
+    project = Project(
+        name=name,
+        description=description,
+        source_type=source_type,
+        repo_path=repo_path,
+        repo_url=repo_url,
+        branch=branch,
+        workspace_path=workspace_path,
+        detected_stack=detected_stack,
+        dockerfile_path=dockerfile_path,
+        has_env_file=has_env_file,
+        deployment_platform=deployment_platform,
+        deployment_config_json=deployment_config_json,
+        env_config_json=env_config_json,
+    )
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+    return project
+
+
+def update_project(session: Session, project: Project, **kwargs) -> Project:
+    for key, value in kwargs.items():
+        setattr(project, key, value)
     session.add(project)
     session.commit()
     session.refresh(project)
@@ -34,6 +73,11 @@ def create_plan(
     environments: list[str],
     post_steps: list[str],
     warnings: list[str],
+    detected_stack: str | None = None,
+    dockerfile_path: str | None = None,
+    image_tag: str | None = None,
+    ports: list[str] | None = None,
+    env_injected: bool = False,
 ) -> Plan:
     plan = Plan(
         project_id=project_id,
@@ -44,6 +88,11 @@ def create_plan(
         post_steps_json=json.dumps(post_steps),
         warnings_json=json.dumps(warnings),
         status="pending_approval",
+        detected_stack=detected_stack,
+        dockerfile_path=dockerfile_path,
+        image_tag=image_tag,
+        ports_json=json.dumps(ports or []),
+        env_injected=env_injected,
         updated_at=datetime.now(timezone.utc),
     )
     session.add(plan)
@@ -95,3 +144,42 @@ def set_execution_status(session: Session, execution: Execution, status: str) ->
     session.commit()
     session.refresh(execution)
     return execution
+
+
+def create_deployment(
+    session: Session,
+    *,
+    project_id: int,
+    execution_id: int | None,
+    container_id: str | None,
+    image_tag: str | None,
+    status: str = "running",
+) -> Deployment:
+    deployment = Deployment(
+        project_id=project_id,
+        execution_id=execution_id,
+        container_id=container_id,
+        image_tag=image_tag,
+        status=status,
+    )
+    session.add(deployment)
+    session.commit()
+    session.refresh(deployment)
+    return deployment
+
+
+def get_latest_deployment(session: Session, project_id: int) -> Deployment | None:
+    return session.exec(
+        select(Deployment)
+        .where(Deployment.project_id == project_id)
+        .order_by(Deployment.created_at.desc())
+    ).first()
+
+
+def update_deployment(session: Session, deployment: Deployment, **kwargs) -> Deployment:
+    for key, value in kwargs.items():
+        setattr(deployment, key, value)
+    session.add(deployment)
+    session.commit()
+    session.refresh(deployment)
+    return deployment
