@@ -1,5 +1,9 @@
 import { API_BASE_URL } from "./config";
 import type {
+  AnalyticsSummary,
+  ChatMessage,
+  ChatResponse,
+  ChatSession,
   ExecutionDetail,
   PlanPreview,
   Project,
@@ -204,4 +208,48 @@ export async function fetchDeployStatus(
     { cache: "no-store" }
   );
   return handleResponse<DeployStatusResponse>(res);
+}
+
+// ── Chat / Conversation (Phase 2) ────────────────────────────────────────────
+
+export async function createChatSession(projectId: number): Promise<ChatSession> {
+  const res = await fetch(`${API_BASE_URL}/chat/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id: projectId }),
+  });
+  return handleResponse<ChatSession>(res);
+}
+
+export async function listChatSessions(projectId: number): Promise<ChatSession[]> {
+  const res = await fetch(`${API_BASE_URL}/chat/sessions?project_id=${projectId}`, {
+    cache: "no-store",
+  });
+  return handleResponse<ChatSession[]>(res);
+}
+
+export async function getChatMessages(sessionId: number): Promise<ChatMessage[]> {
+  const res = await fetch(`${API_BASE_URL}/chat/sessions/${sessionId}/messages`, {
+    cache: "no-store",
+  });
+  return handleResponse<ChatMessage[]>(res);
+}
+
+export async function sendChatMessage(
+  sessionId: number,
+  content: string
+): Promise<ChatResponse> {
+  const res = await fetch(`${API_BASE_URL}/chat/sessions/${sessionId}/message`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+  return handleResponse<ChatResponse>(res);
+}
+
+// ── Analytics (Task 5.2) ────────────────────────────────────────────────────
+
+export async function fetchAnalyticsSummary(): Promise<AnalyticsSummary> {
+  const res = await fetch(`${API_BASE_URL}/analytics/summary`, { cache: "no-store" });
+  return handleResponse<AnalyticsSummary>(res);
 }

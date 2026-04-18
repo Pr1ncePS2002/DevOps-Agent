@@ -131,3 +131,64 @@ export interface DeployStatusResponse {
   url: string | null;
   is_terminal: boolean;
 }
+
+// ── Chat / Conversation (Phase 2) ────────────────────────────────────────────
+
+export interface ChatSession {
+  id: number;
+  project_id: number;
+  created_at: string;
+  last_message_at: string;
+  status: "active" | "archived";
+}
+
+export interface ChatMessage {
+  id: number;
+  session_id: number;
+  role: "user" | "assistant" | "system";
+  content: string;
+  message_type: "text" | "plan_preview" | "execution_status" | "error";
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ChatResponse {
+  response: string;
+  type: "text" | "plan_generated" | "error";
+  plan_id: number | null;
+  metadata: Record<string, unknown>;
+}
+
+// ── Analytics (Task 5.2) ────────────────────────────────────────────────────
+
+export interface DayBucket {
+  date: string;
+  count: number;
+  successes: number;
+  failures: number;
+}
+
+export interface TopProject {
+  name: string;
+  count: number;
+}
+
+export interface RecentActivity {
+  timestamp: string;
+  action: string;
+  project: string;
+  environment: string;
+  status: string;
+  duration_seconds: number | null;
+}
+
+export interface AnalyticsSummary {
+  total_deployments: number;
+  success_rate: number;
+  average_deploy_time_seconds: number;
+  rollback_count: number;
+  deployments_by_day: DayBucket[];
+  deployments_by_environment: Record<string, number>;
+  most_deployed_project: TopProject | null;
+  recent_activity: RecentActivity[];
+}

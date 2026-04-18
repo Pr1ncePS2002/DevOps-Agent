@@ -232,7 +232,7 @@ export function DeploymentWizard() {
         <div className="rounded-3xl border border-white/5 bg-surface-800/70 p-6 shadow-card">
           <h3 className="text-lg font-semibold text-white">Upload .env</h3>
           <p className="mt-1 text-sm text-white/60">
-            Upload environment file for deployment.
+            Upload environment file for deployment, or skip if your project doesn&apos;t need one.
           </p>
           {projects.length > 1 && (
             <select
@@ -275,6 +275,20 @@ export function DeploymentWizard() {
                   Continue to Review Plan
                 </button>
               </>
+            )}
+            {!selectedProject?.has_env_file && (
+              <div className="border-t border-white/5 pt-4">
+                <p className="text-sm text-white/40">
+                  No .env file? No problem — you can skip this step.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setStep(3)}
+                  className="mt-2 flex w-full max-w-xs items-center justify-center gap-2 rounded-2xl border border-white/10 px-4 py-3 text-sm font-medium text-white/60 transition hover:border-white/20 hover:text-white/80"
+                >
+                  Skip — No env needed
+                </button>
+              </div>
             )}
           </div>
         </div>
