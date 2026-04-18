@@ -122,6 +122,40 @@ def get_execution_endpoint(execution_id: int) -> ExecutionResponse:
         )
 
 
+class SummaryResponse(BaseModel):
+    summary: str
+    key_events: list[str]
+    root_cause: str | None
+    recommendations: list[str]
+    severity: str  # info | warning | critical
+
+
+@router.get("/{execution_id}/summary", response_model=SummaryResponse)
+async def get_execution_summary(execution_id: int) -> SummaryResponse:
+    """Return an AI-generated deployment summary / post-mortem."""
+    from app.services.summary_generator import generate_deployment_summary_safe
+
+    with session_scope() as session:
+        execution = get_execution(session, execution_id)
+        if execution is None:
+            raise HTTPException(status_code=404, detail="Execution not found")
+
+        if execution.status not in ("succeeded", "failed", "rolled_back"):
+            raise HTTPException(status_code=409, detail="Execution not yet finished")
+
+        result = await generate_deployment_summary_safe(execution_id, session)
+        if result is None:
+            return SummaryResponse(
+                summary="AI summary generation failed. Check logs for details.",
+                key_events=[],
+                root_cause=None,
+                recommendations=["Review execution logs manually"],
+                severity="warning",
+            )
+
+        return SummaryResponse(**result)
+
+
 @router.websocket("/{execution_id}/logs/stream")
 async def stream_execution_logs(websocket: WebSocket, execution_id: int):
     """Stream live execution logs straight to the frontend without polling."""

@@ -164,6 +164,122 @@ def setup_demo_project() -> DemoProjectResponse:
     )
 
 
+class DemoSetupFullResponse(BaseModel):
+    project_ids: list[int]
+    execution_count: int
+    chat_session_id: int | None
+    message: str
+
+
+@router.post("/setup-full", response_model=DemoSetupFullResponse)
+def setup_full_demo() -> DemoSetupFullResponse:
+    """Create a populated demo environment with sample projects, executions, and chat history."""
+    from datetime import datetime, timedelta, timezone
+    from app.persistence.repositories import (
+        create_execution,
+        set_execution_status,
+        append_execution_log,
+        update_plan_status,
+    )
+
+    project_ids: list[int] = []
+    execution_count = 0
+    chat_session_id: int | None = None
+
+    with session_scope() as session:
+        # Create sample projects
+        samples = [
+            ("api-gateway", "Production API gateway - Node.js + Express", "node", "docker"),
+            ("ml-pipeline", "ML model training pipeline - Python + FastAPI", "python", "docker"),
+            ("web-dashboard", "React admin dashboard", "node", "docker"),
+        ]
+
+        for name, desc, stack, platform in samples:
+            p = create_project(
+                session,
+                name=name,
+                description=desc,
+                source_type="local",
+                detected_stack=stack,
+                deployment_platform=platform,
+            )
+            project_ids.append(p.id or 0)
+
+        # Create sample executions for the first project
+        statuses = ["succeeded", "succeeded", "failed", "succeeded", "rolled_back"]
+        for i, status in enumerate(statuses):
+            plan = create_plan(
+                session,
+                project_id=project_ids[0],
+                raw_command=f"deploy v1.{i} to staging",
+                action="deploy",
+                version=f"1.{i}.0",
+                environments=["staging"],
+                post_steps=["smoke_tests"],
+                warnings=[],
+                detected_stack="node",
+                image_tag=f"api-gateway:1.{i}.0",
+            )
+            update_plan_status(session, plan, "approved")
+
+            ex = create_execution(session, plan.id or 0)
+            set_execution_status(session, ex, "running")
+
+            if status == "succeeded":
+                append_execution_log(session, ex, f"[1/6] Validating project state\n  ✓ Env file present")
+                append_execution_log(session, ex, f"[3/6] Docker build: api-gateway:1.{i}.0\n  ✓ Build succeeded")
+                append_execution_log(session, ex, f"[5/6] Health check\n  ✓ Container is running")
+                append_execution_log(session, ex, f"[6/6] Registering deployment\n  ✓ Deployment registered")
+            elif status == "failed":
+                append_execution_log(session, ex, f"[1/6] Validating project state\n  ✓ Env file present")
+                append_execution_log(session, ex, f"[3/6] Docker build: api-gateway:1.{i}.0\nERROR: Build failed")
+            else:
+                append_execution_log(session, ex, f"Manual rollback to api-gateway:1.{i-1}.0")
+
+            set_execution_status(session, ex, status)
+            execution_count += 1
+
+        # Create a sample chat session with messages
+        try:
+            from app.persistence.repositories import create_chat_session, add_chat_message
+            cs = create_chat_session(session, project_ids[0])
+            chat_session_id = cs.id
+            add_chat_message(
+                session,
+                session_id=cs.id or 0,
+                role="user",
+                content="What's currently deployed on api-gateway?",
+            )
+            add_chat_message(
+                session,
+                session_id=cs.id or 0,
+                role="assistant",
+                content="The api-gateway project is running version 1.4.0 on staging. The last deployment succeeded about 5 minutes ago. Container is healthy and responding on port 3000.",
+            )
+            add_chat_message(
+                session,
+                session_id=cs.id or 0,
+                role="user",
+                content="Deploy v2.0 to production with smoke tests",
+            )
+            add_chat_message(
+                session,
+                session_id=cs.id or 0,
+                role="assistant",
+                content="I'll prepare a deployment plan for api-gateway v2.0 to production with smoke tests.\n\n**Risk Assessment:** HIGH (production deployment)\n- Production target increases risk\n- Recommend running full test suite first\n\nShall I create the deployment plan for your approval?",
+                message_type="text",
+            )
+        except Exception:
+            pass
+
+    return DemoSetupFullResponse(
+        project_ids=project_ids,
+        execution_count=execution_count,
+        chat_session_id=chat_session_id,
+        message=f"Demo environment created: {len(project_ids)} projects, {execution_count} executions, 1 chat session.",
+    )
+
+
 class DemoRunRequest(BaseModel):
     command: str
 
