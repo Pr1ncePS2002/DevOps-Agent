@@ -183,7 +183,7 @@ def build_deployment_plan(
     warnings: list[str] = []
 
     if not has_env_file:
-        warnings.append("No .env file uploaded. Upload env before deployment.")
+        warnings.append("No .env file uploaded — deployment will proceed without environment variables.")
     if not dockerfile_path:
         warnings.append("No Dockerfile. Project analysis will generate one.")
 
