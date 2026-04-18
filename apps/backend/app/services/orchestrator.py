@@ -110,12 +110,37 @@ class Orchestrator:
 
         # 1. Validate
         _log(session, execution, "[1/6] Validating project state")
-        if not project.has_env_file:
-            raise ValueError("No .env file. Upload env before deployment.")
-        _log(session, execution, "  ✓ Env file present")
+        if project.has_env_file:
+            _log(session, execution, "  ✓ Env file present")
+        else:
+            _log(session, execution, "  ⚠ No .env file — proceeding without environment variables")
 
-        # 2. Git pull (if GitHub) - skip for now to keep deterministic
-        _log(session, execution, "[2/6] Git pull (skipped for local)")
+        # 2. Git pull (if GitHub source)
+        if project.source_type == "github" and project.repo_url:
+            _log(session, execution, "[2/6] Git pull (fetching latest from GitHub)")
+            try:
+                import subprocess
+                if project.branch:
+                    subprocess.run(
+                        ["git", "checkout", project.branch],
+                        cwd=str(wp), capture_output=True, text=True, timeout=30,
+                    )
+                # "origin <branch>" — pull from the remote tracking branch
+                pull_cmd = ["git", "pull", "--ff-only"]
+                if project.branch:
+                    pull_cmd += ["origin", project.branch]
+                result = subprocess.run(
+                    pull_cmd,
+                    cwd=str(wp), capture_output=True, text=True, timeout=60,
+                )
+                if result.returncode == 0:
+                    _log(session, execution, f"  ✓ Git pull succeeded: {result.stdout.strip()}")
+                else:
+                    _log(session, execution, f"  ⚠ Git pull warning: {result.stderr.strip()}")
+            except Exception as exc:
+                _log(session, execution, f"  ⚠ Git pull failed (proceeding with existing code): {exc}")
+        else:
+            _log(session, execution, "[2/6] Git pull (skipped — local project)")
 
         # 3. Docker build
         _log(session, execution, f"[3/6] Docker build: {image_tag}")
@@ -145,14 +170,24 @@ class Orchestrator:
 
         # 5. Docker run with env vars
         _log(session, execution, "[4/6] Starting container")
-        env_file = get_env_for_docker(project.id or 0)
-        if not env_file:
-            raise ValueError("Env file not available for container")
+        env_file = get_env_for_docker(project.id or 0) if project.has_env_file else None
 
-        # Determine port — priority: Dockerfile EXPOSE > .env PORT= > stack default
-        app_port = None
+        # Determine ports:
+        #   container_port = what the app listens on inside the container (from Dockerfile EXPOSE)
+        #   host_port      = what the user accesses on localhost (from APP_PORT in registration, or same as container_port)
+        container_port = None
+        host_port = None
 
-        # 1. Read EXPOSE from Dockerfile (most reliable source of truth)
+        # 1. User-specified APP_PORT from registration env config → host port
+        try:
+            env_cfg = json.loads(project.env_config_json or "{}")
+            user_port = env_cfg.get("APP_PORT", "")
+            if str(user_port).isdigit():
+                host_port = str(user_port)
+        except Exception:
+            pass
+
+        # 2. Read EXPOSE from Dockerfile → container port
         try:
             df_text = df_path.read_text(errors="ignore")
             for line in df_text.splitlines():
@@ -160,25 +195,27 @@ class Orchestrator:
                 if stripped.startswith("EXPOSE "):
                     val = stripped.split()[1].split("/")[0]
                     if val.isdigit():
-                        app_port = val
+                        container_port = val
                         break
         except Exception:
             pass
 
-        # 2. Fallback: PORT= or APP_PORT= in the project .env file
-        if not app_port and Path(env_file).exists():
+        # 3. Fallback: PORT= or APP_PORT= in the project .env file
+        if not container_port and env_file and Path(env_file).exists():
             for line in Path(env_file).read_text(errors="ignore").splitlines():
                 if line.startswith("PORT=") or line.startswith("APP_PORT="):
                     val = line.split("=", 1)[1].strip().strip("\"'")
                     if val.isdigit():
-                        app_port = val
+                        container_port = val
                     break
 
-        # 3. Final fallback: stack default
-        if not app_port:
-            app_port = "8080" if project.detected_stack == "node" else "8000"
+        # 4. Final fallback: stack default
+        if not container_port:
+            container_port = "8080" if project.detected_stack == "node" else "8000"
+        if not host_port:
+            host_port = container_port
 
-        ports_dict = {f"{app_port}/tcp": app_port}
+        ports_dict = {f"{container_port}/tcp": host_port}
 
         # Free any container already holding our target ports before starting
         try:
@@ -202,7 +239,7 @@ class Orchestrator:
         ok, result = run_container(
             image_tag,
             name=f"devops-{project.id}-{correlation_id}"[:63],
-            env_file=Path(env_file),
+            env_file=Path(env_file) if env_file else None,
             ports=ports_dict,
         )
         if not ok or not result:
@@ -219,16 +256,26 @@ class Orchestrator:
 
         # 7. Register deployment + store last-known-good
         _log(session, execution, "[6/6] Registering deployment")
-        deploy = create_deployment(
-            session,
-            project_id=project.id or 0,
-            execution_id=execution.id,
-            container_id=container_id,
-            image_tag=image_tag,
-            status="running",
-        )
-        update_project(session, project, last_known_good_tag=image_tag)
-        _log(session, execution, f"  ✓ Deployment registered. Last-known-good: {image_tag}")
+        try:
+            # Use a separate session for deployment registration to avoid
+            # conflicts with the long-running orchestrator session that has
+            # accumulated many commits from log writes.
+            from app.persistence.db import session_scope as _ss
+            with _ss() as deploy_session:
+                deploy = create_deployment(
+                    deploy_session,
+                    project_id=project.id or 0,
+                    execution_id=execution.id,
+                    container_id=container_id,
+                    image_tag=image_tag,
+                    status="running",
+                )
+            update_project(session, project, last_known_good_tag=image_tag)
+            _log(session, execution, f"  ✓ Deployment registered. Last-known-good: {image_tag}")
+        except Exception as exc:
+            self._log.error("deployment_registration_failed", error=str(exc))
+            _log(session, execution, f"  ⚠ Deployment registration failed: {exc}")
+            _log(session, execution, "  Container is still running — deployment is live but untracked.")
 
         try:
             primary_port = list(ports_dict.values())[0] if ports_dict else "unknown"

@@ -94,7 +94,7 @@ class ProjectRegistrationService:
             dockerfile_path=analysis.get("dockerfile_path"),
             deployment_platform=platform,
             deployment_config_json=json.dumps(payload.deployment.config),
-            env_config_json=json.dumps(list(payload.env.keys())),
+            env_config_json=json.dumps(payload.env),
         )
 
         _log.info("project_registered", project_id=project.id, platform=platform)

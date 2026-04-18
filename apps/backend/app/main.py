@@ -55,7 +55,30 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     configure_logging(os.getenv("LOG_LEVEL", "INFO"))
 
-    app = FastAPI(title="AI DevOps Commander API", version="0.0.1", lifespan=lifespan)
+    tags_metadata = [
+        {"name": "projects", "description": "Project registration and management"},
+        {"name": "commands", "description": "Natural-language command parsing and plan generation"},
+        {"name": "executions", "description": "Deployment execution, approval, and monitoring"},
+        {"name": "chat", "description": "Conversational AI interface (multi-turn)"},
+        {"name": "analytics", "description": "Deployment metrics and history aggregation"},
+        {"name": "providers", "description": "Cloud provider connection (Vercel, Render)"},
+        {"name": "deploy-status", "description": "Deployment status polling for cloud providers"},
+        {"name": "demo", "description": "Demo setup and sample data generation"},
+    ]
+
+    app = FastAPI(
+        title="AI DevOps Commander API",
+        version="1.0.0",
+        description=(
+            "AI-powered DevOps deployment platform. Parse natural-language commands "
+            "into structured deployment plans, validate with RAG-based safety checks, "
+            "and execute via Docker — all with real-time streaming and AI-generated analytics."
+        ),
+        contact={"name": "AI DevOps Commander", "url": "https://github.com/ai-devops-commander"},
+        license_info={"name": "MIT", "url": "https://opensource.org/licenses/MIT"},
+        openapi_tags=tags_metadata,
+        lifespan=lifespan,
+    )
 
     app.add_middleware(
         CORSMiddleware,

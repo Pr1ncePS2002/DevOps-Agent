@@ -40,13 +40,25 @@ def execute_plan(execution_id: int) -> None:
         update_plan_status(session, plan, "running")
 
         orchestrator = Orchestrator()
+        succeeded = False
         try:
             orchestrator.run(project=project, plan=plan, execution=execution, session=session)
-            set_execution_status(session, execution, "succeeded")
-            update_plan_status(session, plan, "succeeded")
-            log.info("execution_succeeded")
+            succeeded = True
         except Exception as exc:  # noqa: BLE001
             append_execution_log(session, execution, f"ERROR: {exc}")
-            set_execution_status(session, execution, "failed")
-            update_plan_status(session, plan, "failed")
             log.exception("execution_failed")
+
+    # Use a fresh session to update final status — the orchestrator session
+    # may be stale after many commits during the deployment pipeline.
+    try:
+        with session_scope() as final_session:
+            ex = get_execution(final_session, execution_id)
+            pl = get_plan(final_session, ex.plan_id) if ex else None
+            if ex and ex.status == "running":
+                final_status = "succeeded" if succeeded else "failed"
+                set_execution_status(final_session, ex, final_status)
+                if pl and pl.status == "running":
+                    update_plan_status(final_session, pl, final_status)
+                log.info("execution_finished", status=final_status)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("failed_to_update_final_status", error=str(exc))
