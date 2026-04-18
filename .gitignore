@@ -41,3 +41,15 @@ logs/
 # Data
 data/
 chroma/
+
+# Presentation & project report artifacts
+*.pptx
+*.docx
+*.pdf
+~$*
+PRESENTATION-SPEECH.md
+PROJECT-REPORT.md
+AI_DevOps_Commander_DFD_Level0.png
+AI_DevOps_Commander_UseCase.png
+UseCase_Diagram.png
+
