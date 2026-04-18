@@ -1,0 +1,93 @@
+version: "3.9"
+
+# AI DevOps Commander — Full Stack
+# Start everything: docker-compose up --build
+# Stop: docker-compose down
+
+services:
+  # ── Redis (job queue) ───────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: devops-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Backend (FastAPI) ───────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    container_name: devops-backend
+    ports:
+      - "3001:3001"
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # Override .env values for Docker networking
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=sqlite:///./data/dev.db
+      - HOST=0.0.0.0
+      - CORS_ORIGINS=http://localhost:3000,http://frontend:3000
+    volumes:
+      # Persist the SQLite DB and workspace data
+      - backend-data:/app/data
+      # Mount Docker socket so the backend can run containers on the host
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # ── RQ Worker ────────────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    container_name: devops-worker
+    command: python -m app.queue.worker
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=sqlite:///./data/dev.db
+    volumes:
+      - backend-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+  # ── Frontend (Next.js) ───────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./apps/frontend
+      dockerfile: Dockerfile
+    container_name: devops-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:3001
+      - NODE_ENV=production
+    restart: unless-stopped
+
+volumes:
+  backend-data:
+    driver: local

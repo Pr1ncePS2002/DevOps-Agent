@@ -1,0 +1,35 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv
+*.egg-info
+.pytest_cache
+.ruff_cache
+
+# Node
+node_modules
+.next
+*.tsbuildinfo
+
+# Data / secrets
+data/*.db
+data/chroma
+data/workspaces
+.env
+!.env.example
+
+# Dev artifacts
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Docs (not needed at runtime)
+docs/
+*.md
