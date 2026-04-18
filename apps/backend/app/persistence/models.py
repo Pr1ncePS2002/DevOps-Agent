@@ -10,6 +10,10 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 class Project(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
@@ -67,3 +71,25 @@ class Deployment(SQLModel, table=True):
     image_tag: Optional[str] = None
     status: str = "running"  # running|stopped|failed|rolled_back
     created_at: datetime = Field(default_factory=_utc_now)
+    updated_at: datetime = Field(default_factory=_utc_now)
+
+
+# ── Chat / Conversation ───────────────────────────────────────────────────────
+
+
+class ChatSession(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(index=True)
+    created_at: str = Field(default_factory=_utc_now_iso)
+    last_message_at: str = Field(default_factory=_utc_now_iso)
+    status: str = "active"  # active | archived
+
+
+class ChatMessage(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    session_id: int = Field(index=True)
+    role: str  # "user" | "assistant" | "system"
+    content: str
+    message_type: str = "text"  # "text" | "plan_preview" | "execution_status" | "error"
+    metadata_json: str = "{}"  # JSON string for plan_id, execution_id, etc.
+    created_at: str = Field(default_factory=_utc_now_iso)
